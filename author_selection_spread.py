@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
 from sklearn.metrics import r2_score
 from matplotlib.ticker import MaxNLocator
@@ -70,24 +69,18 @@ def compute_author_stats(df: pd.DataFrame) -> pd.DataFrame:
 def make_plot(df_stats: pd.DataFrame, period: str, root_flag: str,
               n_thresh: int, viz_dir: Path) -> None:
     """Generate and save scatter plot for a given threshold and filter."""
-    # Jitter X to reduce overplotting
     x = df_stats['X'].to_numpy()
-    jitter_x = x + np.random.uniform(-0.3, 0.3, size=len(df_stats))
-    # Y in percent
     y = df_stats['Y'].to_numpy() * 100
-    # Point sizes
     sizes = df_stats['num_works'].to_numpy() * 30
-    # Color by modal_form using Dark2 palette
     forms = sorted(df_stats['modal_form'].unique())
-    # replace the existing form_palette line
-    form_palette = dict(
-        zip(forms, sns.color_palette("Dark2", n_colors=len(forms)))
-    )
+    cmap = plt.get_cmap('Dark2')
+    palette_colors = getattr(cmap, 'colors', [cmap(i/(len(forms)-1)) for i in range(len(forms))])
+    form_palette = dict(zip(forms, palette_colors[:len(forms)]))
     # Create figure with specified size and resolution
     fig, ax = plt.subplots(figsize=(10, 6), dpi=600)
     # -------- Scatter ------------
     points = ax.scatter(
-        jitter_x, y,
+        x, y,
         s=sizes,
         c=df_stats["modal_form"].map(form_palette),
         alpha=0.6,
@@ -100,24 +93,31 @@ def make_plot(df_stats: pd.DataFrame, period: str, root_flag: str,
     ax.set_ylim(0, 110)
     ax.axhline(100, color="grey", alpha=0.3, lw=1, zorder=0)
     # Labels and title
-    ax.set_xlabel("# anthologies selecting author (jittered)")
-    ax.set_ylabel("% selections repeating the same work")
-    ax.set_title(f"{period} | root={root_flag} | n≥{n_thresh}")
+    ax.set_xlabel("Number of African American literature anthologies selecting an author")
+    ax.set_ylabel("Percentage of selections repeating the same work")
+    ax.set_title(
+        "Author selection across African American literature anthologies"
+        "\n(Root works only; n ≥ 13)"
+    )
     # Legend for forms
     for form, color in form_palette.items():
         ax.scatter([], [], c=[color], label=form, s=50, edgecolors="black")
-    ax.legend(title="Most-common form", frameon=False, loc="best")
+    ax.legend(
+        title="Most common form\n(size ∝ total works selected)",
+        frameon=False,
+        loc="best"
+    )
     # -------- Labels -------------
     # -------- Labels -------------
     texts = [
         ax.text(
-            jx, yv + 1,
+            xi, yi + 1,
             author,
             fontsize=6,
             color=form_palette[form]
         )
-        for jx, yv, author, form in zip(
-            jitter_x, y, df_stats['author'], df_stats['modal_form']
+        for xi, yi, author, form in zip(
+            x, y, df_stats['author'], df_stats['modal_form']
         )
     ]
     # prevent overlaps (adjustText required)
@@ -132,36 +132,13 @@ def make_plot(df_stats: pd.DataFrame, period: str, root_flag: str,
 
 def main() -> None:
     df = load_data()
-    # Define periods and filters
-    periods = {
-        'all_time': df,
-        'pre_1996': df[df['anthology_year'] < 1996],
-    }
-    root_filters = {
-        'all_works': False,
-        'root_only': True,
-    }
-    thresholds = [10, 11, 12, 13, 14, 15, 16, 17]
-    # Ensure output directory
+    df_sub = df[df['parent_work_id'] == '']
+    stats = compute_author_stats(df_sub)
+    stats_n = stats[stats['X'] >= 13]
     viz_dir = Path(__file__).parent / 'viz'
     viz_dir.mkdir(exist_ok=True)
-    count = 0
-    # Loop over combinations
-    for period, df_period in periods.items():
-        for flag_name, root_only in root_filters.items():
-            if root_only:
-                df_sub = df_period[df_period['parent_work_id'] == '']
-            else:
-                df_sub = df_period
-            stats = compute_author_stats(df_sub)
-            for n in thresholds:
-                stats_n = stats[stats['X'] >= n]
-                if stats_n.empty:
-                    continue
-                make_plot(stats_n, period, flag_name, n, viz_dir)
-                count += 1
-    total = len(periods) * len(root_filters) * len(thresholds)
-    print(f"Created {count} figures in viz/ (periods={len(periods)} × roots={len(root_filters)} × thresholds={len(thresholds)}).")
+    make_plot(stats_n, 'all_time', 'root_only', 13, viz_dir)
+    print("Created figure: viz/author_spread_all_time_rootroot_only_n13.png")
 
 
 if __name__ == '__main__':
