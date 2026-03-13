@@ -146,34 +146,50 @@ def overlap_matrix(keys: list[str], sets: dict[str, set[str]]) -> np.ndarray:
     return mat
 
 
+def counts_matrix(keys: list[str], sets: dict[str, set[str]]) -> np.ndarray:
+    """Cell (i, j) = |sets[i] ∩ sets[j]| (raw count)."""
+    n = len(keys)
+    mat = np.zeros((n, n))
+    for i, ki in enumerate(keys):
+        for j, kj in enumerate(keys):
+            mat[i, j] = len(sets[ki] & sets[kj])
+    return mat
+
+
 # ── 6. Plot ───────────────────────────────────────────────────────────────────
 
-def plot(mat: np.ndarray, labels: list[str], out: Path, cmap: str = "viridis") -> None:
+def plot(
+    mat: np.ndarray,
+    labels: list[str],
+    out: Path,
+    cmap: str = "viridis",
+    vmax: float = 100,
+    cbar_label: str = "% of row edition's authors also in column edition",
+    title: str = (
+        "Author overlap between African American literature anthology editions\n"
+        "(cell = % of row edition's authors also present in column edition)"
+    ),
+) -> None:
     n = len(labels)
     fig, ax = plt.subplots(figsize=(18, 16))
 
-    im = ax.imshow(mat, cmap=cmap, vmin=0, vmax=100, aspect="auto")
+    im = ax.imshow(mat, cmap=cmap, vmin=0, vmax=vmax, aspect="auto")
     cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
-    cbar.set_label("% of row edition's authors also in column edition", fontsize=10)
+    cbar.set_label(cbar_label, fontsize=10)
 
     ax.set_xticks(range(n))
     ax.set_yticks(range(n))
     ax.set_xticklabels(labels, rotation=90, ha="center", fontsize=7.5)
     ax.set_yticklabels(labels, fontsize=7.5)
 
-    # Annotate cells with integer percentages
     for i in range(n):
         for j in range(n):
             v = mat[i, j]
-            text_color = "white" if v < 55 else "black"
+            text_color = "white" if v < vmax * 0.55 else "black"
             ax.text(j, i, f"{v:.0f}", ha="center", va="center",
                     fontsize=5, color=text_color)
 
-    ax.set_title(
-        "Author overlap between African American literature anthology editions\n"
-        "(cell = % of row edition's authors also present in column edition)",
-        fontsize=12, pad=14,
-    )
+    ax.set_title(title, fontsize=12, pad=14)
     fig.tight_layout()
     fig.savefig(out, dpi=300, bbox_inches="tight")
     print(f"Saved → {out}")
@@ -189,10 +205,25 @@ def main() -> None:
     keys = sorted(edition_sets, key=lambda k: sort_year_for(k, df))
     labels = [make_label(k, df) for k in keys]
 
-    mat = overlap_matrix(keys, edition_sets)
     OUT_FILE.parent.mkdir(exist_ok=True)
-    plot(mat, labels, OUT_FILE)
-    plot(mat, labels, OUT_FILE.with_stem(OUT_FILE.stem + "_bw"), cmap="Greys_r")
+
+    pct_mat = overlap_matrix(keys, edition_sets)
+    plot(pct_mat, labels, OUT_FILE)
+    plot(pct_mat, labels, OUT_FILE.with_stem(OUT_FILE.stem + "_bw"), cmap="Greys_r")
+
+    cnt_mat  = counts_matrix(keys, edition_sets)
+    cnt_vmax = int(cnt_mat.max())
+    cnt_kwargs = dict(
+        vmax=cnt_vmax,
+        cbar_label="Authors shared between editions (raw count)",
+        title=(
+            "Author overlap between African American literature anthology editions\n"
+            "(cell = number of authors shared between row and column edition)"
+        ),
+    )
+    plot(cnt_mat, labels, OUT_FILE.with_stem(OUT_FILE.stem + "_counts"), **cnt_kwargs)
+    plot(cnt_mat, labels, OUT_FILE.with_stem(OUT_FILE.stem + "_counts_bw"),
+         cmap="Greys_r", **cnt_kwargs)
 
 
 if __name__ == "__main__":
