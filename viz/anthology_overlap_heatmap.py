@@ -148,11 +148,11 @@ def overlap_matrix(keys: list[str], sets: dict[str, set[str]]) -> np.ndarray:
 
 # ── 6. Plot ───────────────────────────────────────────────────────────────────
 
-def plot(mat: np.ndarray, labels: list[str], out: Path) -> None:
+def plot(mat: np.ndarray, labels: list[str], out: Path, cmap: str = "viridis") -> None:
     n = len(labels)
     fig, ax = plt.subplots(figsize=(18, 16))
 
-    im = ax.imshow(mat, cmap="viridis", vmin=0, vmax=100, aspect="auto")
+    im = ax.imshow(mat, cmap=cmap, vmin=0, vmax=100, aspect="auto")
     cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
     cbar.set_label("% of row edition's works also in column edition", fontsize=10)
 
@@ -192,6 +192,7 @@ def main() -> None:
     mat = overlap_matrix(keys, edition_sets)
     OUT_FILE.parent.mkdir(exist_ok=True)
     plot(mat, labels, OUT_FILE)
+    plot(mat, labels, OUT_FILE.with_stem(OUT_FILE.stem + "_bw"), cmap="Greys_r")
 
 
 if __name__ == "__main__":
