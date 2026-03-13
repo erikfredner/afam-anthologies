@@ -79,18 +79,24 @@ AUTHOR_COLOR = "#d62728"   # red
 
 
 def plot(
-    work_ks:   np.ndarray, work_pcts:   np.ndarray,
-    auth_ks:   np.ndarray, auth_pcts:   np.ndarray,
+    work_ks:   np.ndarray, work_pcts:   np.ndarray, n_works:   int,
+    auth_ks:   np.ndarray, auth_pcts:   np.ndarray, n_authors: int,
     out: Path,
 ) -> None:
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    ax.plot(work_ks, work_pcts,
-            color=WORK_COLOR, marker="o", markersize=5, linewidth=1.5,
-            label="Works")
-    ax.plot(auth_ks, auth_pcts,
-            color=AUTHOR_COLOR, marker="s", markersize=5, linewidth=1.5,
-            label="Authors")
+    scale = 1.5   # pct × scale → scatter area in points²
+
+    work_label   = f"Works (N={n_works})"
+    author_label = f"Authors (N={n_authors})"
+
+    ax.plot(work_ks, work_pcts, color=WORK_COLOR, linewidth=0.8, alpha=0.4, zorder=2)
+    ax.scatter(work_ks, work_pcts, s=work_pcts * scale,
+               color=WORK_COLOR, marker="o", zorder=3, label=work_label)
+
+    ax.plot(auth_ks, auth_pcts, color=AUTHOR_COLOR, linewidth=0.8, alpha=0.4, zorder=2)
+    ax.scatter(auth_ks, auth_pcts, s=auth_pcts * scale,
+               color=AUTHOR_COLOR, marker="s", zorder=3, label=author_label)
 
     ax.set_xlabel("Number of anthology editions selecting an item", fontsize=11)
     ax.set_ylabel("% of items selected in at least this many editions", fontsize=11)
@@ -123,7 +129,9 @@ def main() -> None:
     author_ks, author_pcts = survival_curve(author_counts)
 
     OUT_FILE.parent.mkdir(exist_ok=True)
-    plot(work_ks, work_pcts, author_ks, author_pcts, OUT_FILE)
+    plot(work_ks, work_pcts, len(work_counts),
+         author_ks, author_pcts, len(author_counts),
+         OUT_FILE)
 
 
 if __name__ == "__main__":
