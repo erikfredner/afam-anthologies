@@ -15,7 +15,7 @@ def main() -> None:
     parser.add_argument("--only-root-works", action="store_true",
                         help="Limit work-level overlap analysis to works without parent works (parent_work_title empty).")
     args = parser.parse_args()
-    csv_path = Path(__file__).parent / "data" / "202505121539 authors works.csv"
+    csv_path = Path(__file__).parent.parent / "data" / "202505121539 authors works.csv"
     df = pd.read_csv(csv_path, dtype=str, na_filter=False)
     # Ensure series_id column exists for edition_key logic
     if "series_id" not in df.columns:

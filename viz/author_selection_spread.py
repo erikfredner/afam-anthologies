@@ -12,7 +12,7 @@ except ImportError:
 
 def load_data() -> pd.DataFrame:
     """Load author-work-form data and prepare edition keys."""
-    csv_path = Path(__file__).parent / 'data' / '202505131423 author work form.csv'
+    csv_path = Path(__file__).parent.parent / 'data' / '202505131423 author work form.csv'
     df = pd.read_csv(csv_path, dtype=str, na_filter=False)
     # filter out authorless rows
     df = df[df["work_author"].str.strip() != ""]
@@ -135,7 +135,7 @@ def main() -> None:
     df_sub = df[df['parent_work_id'] == '']
     stats = compute_author_stats(df_sub)
     stats_n = stats[stats['X'] >= 13]
-    viz_dir = Path(__file__).parent / 'viz'
+    viz_dir = Path(__file__).parent
     viz_dir.mkdir(exist_ok=True)
     make_plot(stats_n, 'all_time', 'root_only', 13, viz_dir)
     print("Created figure: viz/author_spread_all_time_rootroot_only_n13.png")

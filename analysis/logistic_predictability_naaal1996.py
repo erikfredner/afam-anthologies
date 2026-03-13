@@ -29,8 +29,8 @@ from scipy.stats import fisher_exact
 # -------------------------------------------------------------------- #
 # Configuration
 # -------------------------------------------------------------------- #
-DATA_FILE: Final = Path("data") / "202505121539 authors works.csv"
-CSV_OUT: Final = Path("data") / "naaal1996_threshold_tests.csv"
+DATA_FILE: Final = Path(__file__).parent.parent / "data" / "202505121539 authors works.csv"
+CSV_OUT: Final = Path(__file__).parent.parent / "data" / "naaal1996_threshold_tests.csv"
 TARGET_SERIES: Final = "The Norton Anthology of African American Literature"
 TARGET_YEAR: Final = 1996
 TARGET_EDITION: Final = "1"

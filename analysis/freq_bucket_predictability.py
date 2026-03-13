@@ -30,7 +30,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     # Load data
-    csv_path = Path("data/202505121539 authors works.csv")
+    csv_path = Path(__file__).parent.parent / "data" / "202505121539 authors works.csv"
     df = pd.read_csv(csv_path, dtype=str, na_filter=False)
     df["anthology_year"] = df["anthology_year"].astype(int)
     # Determine which works to include in work-level analysis
@@ -103,7 +103,7 @@ def main() -> None:
 
     # Handle CSV saving mode
     if args.save_csv:
-        data_dir = Path(__file__).parent / "data"
+        data_dir = Path(__file__).parent.parent / "data"
         works_csv = data_dir / "freq_bucket_predictability_works.csv"
         authors_csv = data_dir / "freq_bucket_predictability_authors.csv"
         result.to_csv(works_csv, index=False)

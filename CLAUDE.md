@@ -12,32 +12,32 @@ Python analysis scripts for studying African American literary anthologies — e
 # Install dependencies
 uv sync
 
-# Run a script
-uv run python overlap_naaal_1996.py
-uv run python freq_bucket_predictability.py --save-csv
-uv run python logistic_predictability_naaal1996.py
-uv run python author_selection_spread.py
+# Run an analysis script
+uv run python analysis/overlap_naaal_1996.py
+uv run python analysis/freq_bucket_predictability.py --save-csv
+uv run python analysis/logistic_predictability_naaal1996.py
+
+# Run a viz script
+uv run python viz/author_selection_spread.py
+uv run python viz/anthology_overlap_heatmap.py
+uv run python viz/anthology_network.py --csv data/myfile.csv --out network.png
+uv run python viz/reselection_probability.py data/myfile.csv
 
 # Lint
 uv run ruff check .
 uv run ruff format .
-
-# viz/ scripts take positional or named args (see --help)
-uv run python viz/anthology_network.py --csv data/myfile.csv --out network.png
-uv run python viz/reselection_probability.py data/myfile.csv
 ```
 
 ## Architecture
 
 Scripts are standalone — each is a self-contained analysis with a `main()` and `if __name__ == "__main__"` guard. There is no shared library or import graph between scripts.
 
-**Root-level scripts** do statistical/overlap analysis:
+**`analysis/`** — statistical/overlap analysis scripts that print results to stdout or write CSVs:
 - `overlap_naaal_1996.py` — work and author overlap between NAAAL 1996 and pre-1996 anthologies
 - `freq_bucket_predictability.py` — recall analysis by prior appearance frequency buckets
 - `logistic_predictability_naaal1996.py` — logistic regression predicting NAAAL 1996 inclusion
-- `author_selection_spread.py` — scatter plot of author breadth vs. work repetition
 
-**`viz/` scripts** produce charts and network graphs, often requiring a CSV path argument.
+**`viz/`** — scripts that produce charts, network graphs, and formatted tables, often requiring a CSV path argument.
 
 ## Data
 
