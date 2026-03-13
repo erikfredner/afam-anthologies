@@ -216,6 +216,7 @@ def test_choose_exemplars_selects_requested_authors_in_fixed_order():
             {"author_id": "2", "author_name": "Alain Locke", "anthology_appearances": 18, "signature_work_share": 0.80, "signature_work_title": "The New Negro <essay>", "total_work_selections": 25},
             {"author_id": "22", "author_name": "Alain Locke", "anthology_appearances": 1, "signature_work_share": 1.00, "signature_work_title": "The New Negro <edited collection>", "total_work_selections": 1},
             {"author_id": "3", "author_name": "Olaudah Equiano", "anthology_appearances": 22, "signature_work_share": 0.30, "signature_work_title": "The Interesting Narrative"},
+            {"author_id": "33", "author_name": "Phillis Wheatley", "anthology_appearances": 24, "signature_work_share": 0.52, "signature_work_title": "Poems on Various Subjects, Religious and Moral"},
             {"author_id": "4", "author_name": "Gwendolyn Brooks", "anthology_appearances": 16, "signature_work_share": 0.08, "signature_work_title": "We Real Cool"},
         ]
     )
@@ -226,11 +227,13 @@ def test_choose_exemplars_selects_requested_authors_in_fixed_order():
         "Olaudah Equiano",
         "Alain Locke",
         "Langston Hughes",
+        "Phillis Wheatley",
     ]
     assert list(result["signature_work_title"]) == [
         "The Interesting Narrative",
         "The New Negro <essay>",
         "Mother to Son",
+        "Poems on Various Subjects, Religious and Moral",
     ]
 
 
@@ -254,6 +257,13 @@ def test_build_label_text_uses_custom_short_titles_for_target_authors():
     )
 
     assert build_label_text(row) == 'Locke, "The New Negro"'
+    wheatley_row = pd.Series(
+        {
+            "author_name": "Phillis Wheatley",
+            "signature_work_title": "Poems on Various Subjects, Religious and Moral",
+        }
+    )
+    assert build_label_text(wheatley_row) == r'Wheatley, $\it{Poems\ on\ Various\ Subjects}$'
 
 
 def test_smoke_writes_metrics_csv_and_png(tmp_path: Path):

@@ -16,7 +16,12 @@ DEFAULT_INPUT = (
 )
 DEFAULT_OUT_PNG = Path(__file__).parent / "canonical_author_map.png"
 DEFAULT_OUT_CSV = Path(__file__).parent.parent / "data" / "canonical_author_metrics.csv"
-TARGET_LABEL_AUTHORS = ["Olaudah Equiano", "Alain Locke", "Langston Hughes"]
+TARGET_LABEL_AUTHORS = [
+    "Olaudah Equiano",
+    "Alain Locke",
+    "Langston Hughes",
+    "Phillis Wheatley",
+]
 TARGET_SIGNATURE_TITLES = {
     "Alain Locke": "The New Negro <essay>",
 }
@@ -24,16 +29,19 @@ CUSTOM_LABEL_TEXT = {
     "Langston Hughes": 'Hughes, "Mother to Son"',
     "Alain Locke": 'Locke, "The New Negro"',
     "Olaudah Equiano": r"Equiano, $\it{The\ Interesting\ Narrative}$",
+    "Phillis Wheatley": r'Wheatley, $\it{Poems\ on\ Various\ Subjects}$',
 }
 LABEL_OFFSETS = {
     "Langston Hughes": (-10, 10),
     "Alain Locke": (10, 14),
     "Olaudah Equiano": (10, -12),
+    "Phillis Wheatley": (-10, 8),
 }
 LABEL_ALIGNMENTS = {
     "Langston Hughes": "right",
     "Alain Locke": "left",
     "Olaudah Equiano": "left",
+    "Phillis Wheatley": "right",
 }
 
 
