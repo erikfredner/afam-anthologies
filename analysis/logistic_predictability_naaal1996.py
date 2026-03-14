@@ -20,6 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final, List, Dict, Any
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
@@ -31,9 +32,13 @@ from scipy.stats import fisher_exact
 # -------------------------------------------------------------------- #
 DATA_FILE: Final = Path(__file__).parent.parent / "data" / "202505121539 authors works.csv"
 CSV_OUT: Final = Path(__file__).parent.parent / "data" / "naaal1996_threshold_tests.csv"
+FIG_OUT: Final = Path(__file__).parent.parent / "viz" / "naaal1996_author_selection_logit.png"
+FIG_OUT_CUMULATIVE: Final = Path(__file__).parent.parent / "viz" / "naaal1996_author_selection_logit_cumulative.png"
 TARGET_SERIES: Final = "The Norton Anthology of African American Literature"
 TARGET_YEAR: Final = 1996
 TARGET_EDITION: Final = "1"
+LINE_COLOR = "#1f77b4"
+POINT_COLOR = "#d62728"
 
 # -------------------------------------------------------------------- #
 # Data helpers
@@ -97,6 +102,85 @@ def fit_logit_safe(y: pd.Series, x: pd.Series) -> sm.Logit:
 
 def pval_safe(result: sm.Logit, param: str) -> str:
     return f"{result.pvalues[param]:.3g}" if hasattr(result, "pvalues") else "n/a"
+
+
+# -------------------------------------------------------------------- #
+# Figure helpers
+# -------------------------------------------------------------------- #
+def empirical_rates(authors: pd.DataFrame) -> pd.DataFrame:
+    """Summarize observed selection rates by prior-count bucket."""
+    summary = (
+        authors.groupby("prior_count")["in_naaal"]
+        .agg(probability="mean", n="size")
+        .reset_index()
+        .sort_values("prior_count")
+    )
+    return summary
+
+
+def empirical_rates_cumulative(authors: pd.DataFrame) -> pd.DataFrame:
+    """Summarize selection rates for authors with prior_count >= k."""
+    thresholds = sorted(authors["prior_count"].unique())
+    rows = []
+    for k in thresholds:
+        subset = authors[authors["prior_count"] >= k]
+        rows.append({"prior_count": k, "probability": subset["in_naaal"].mean(), "n": len(subset)})
+    return pd.DataFrame(rows)
+
+
+def predicted_probabilities(result: Any, max_prior_count: int, min_prior_count: int = 0) -> pd.DataFrame:
+    """Return fitted probabilities for each integer prior count."""
+    counts = np.arange(min_prior_count, max_prior_count + 1, dtype=int)
+    X = sm.add_constant(pd.Series(counts, name="prior_count"), has_constant="add")
+    probs = np.asarray(result.predict(X), dtype=float)
+    return pd.DataFrame({"prior_count": counts, "probability": probs})
+
+
+def plot_probability_curve(authors: pd.DataFrame, result: Any, out_path: Path, cumulative: bool = False) -> None:
+    """Plot empirical bucket rates and the fitted logistic probability curve."""
+    bucket_df = empirical_rates_cumulative(authors) if cumulative else empirical_rates(authors)
+    curve_df = predicted_probabilities(result, int(authors["prior_count"].max()), min_prior_count=0)
+
+    fig, (ax_top, ax_bot) = plt.subplots(
+        2, 1, figsize=(10, 8), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
+    )
+    ax_top.plot(
+        curve_df["prior_count"],
+        curve_df["probability"],
+        color=LINE_COLOR,
+        linewidth=2.0,
+        label="Logistic model",
+        zorder=2,
+    )
+    ax_top.scatter(
+        bucket_df["prior_count"],
+        bucket_df["probability"],
+        s=36,
+        color=POINT_COLOR,
+        alpha=0.75,
+        label="Observed rate",
+        zorder=3,
+    )
+
+    ax_top.set_ylabel("Probability of selection for NAAAL 1996")
+    ax_top.set_title(
+        "Author selection probability for the 1996 Norton Anthology\n"
+        "of African American Literature (1st edition)"
+    )
+    ax_top.set_xlim(0, int(authors["prior_count"].max()) + 0.5)
+    ax_top.set_ylim(-0.02, 1.02)
+    ax_top.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+    ax_top.grid(True, alpha=0.25, linestyle=":")
+    ax_top.legend(frameon=False)
+
+    ax_bot.bar(bucket_df["prior_count"], bucket_df["n"], color=POINT_COLOR, alpha=0.6, width=0.5)
+    ax_bot.set_xlabel("Number of prior anthologies selecting an author")
+    ax_bot.set_ylabel("N authors (≥ k)" if cumulative else "N authors")
+    ax_bot.grid(True, alpha=0.25, linestyle=":", axis="y")
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 
 # -------------------------------------------------------------------- #
@@ -193,6 +277,14 @@ def main() -> None:
         f"the odds by ≈ {np.exp(beta2):.0f}.  A threshold‑by‑threshold table is saved "
         f"to '{CSV_OUT.name}'."
     )
+
+    # -------- Prior-count logit and figures --------------------------
+    authors_fitted = authors[authors["prior_count"] >= 1]
+    result_count = fit_logit_safe(authors_fitted["in_naaal"], authors_fitted["prior_count"])
+    plot_probability_curve(authors_fitted, result_count, FIG_OUT)
+    plot_probability_curve(authors_fitted, result_count, FIG_OUT_CUMULATIVE, cumulative=True)
+    print(f"Saved figure                     : {FIG_OUT}")
+    print(f"Saved figure (cumulative)        : {FIG_OUT_CUMULATIVE}")
 
 
 if __name__ == "__main__":

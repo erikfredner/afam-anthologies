@@ -23,6 +23,7 @@ from numpy.linalg import LinAlgError
 
 DATA_FILE = Path(__file__).parent.parent / "data" / "2026-03-13 work ids in afam anthologies.csv"
 FIG_OUT = Path(__file__).parent.parent / "viz" / "naaal2025_work_selection_logit.png"
+FIG_OUT_CUMULATIVE = Path(__file__).parent.parent / "viz" / "naaal2025_work_selection_logit_cumulative.png"
 TARGET_YEAR = "2025"
 TARGET_EDITION = "4"
 TARGET_KEY = f"untitled|{TARGET_YEAR}|{TARGET_EDITION}"
@@ -130,6 +131,16 @@ def empirical_rates(works: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
+def empirical_rates_cumulative(works: pd.DataFrame) -> pd.DataFrame:
+    """Summarize selection rates for works with prior_count >= k."""
+    thresholds = sorted(works["prior_count"].unique())
+    rows = []
+    for k in thresholds:
+        subset = works[works["prior_count"] >= k]
+        rows.append({"prior_count": k, "probability": subset["in_target"].mean(), "n": len(subset)})
+    return pd.DataFrame(rows)
+
+
 def predicted_probabilities(result: Any, max_prior_count: int, min_prior_count: int = 0) -> pd.DataFrame:
     """Return fitted probabilities for each integer prior count."""
     counts = np.arange(min_prior_count, max_prior_count + 1, dtype=int)
@@ -138,13 +149,15 @@ def predicted_probabilities(result: Any, max_prior_count: int, min_prior_count: 
     return pd.DataFrame({"prior_count": counts, "probability": probs})
 
 
-def plot_probability_curve(works: pd.DataFrame, result: Any, out_path: Path) -> None:
+def plot_probability_curve(works: pd.DataFrame, result: Any, out_path: Path, cumulative: bool = False) -> None:
     """Plot empirical bucket rates and the fitted logistic probability curve."""
-    bucket_df = empirical_rates(works)
+    bucket_df = empirical_rates_cumulative(works) if cumulative else empirical_rates(works)
     curve_df = predicted_probabilities(result, int(works["prior_count"].max()), min_prior_count=0)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(
+    fig, (ax_top, ax_bot) = plt.subplots(
+        2, 1, figsize=(10, 8), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
+    )
+    ax_top.plot(
         curve_df["prior_count"],
         curve_df["probability"],
         color=LINE_COLOR,
@@ -152,27 +165,31 @@ def plot_probability_curve(works: pd.DataFrame, result: Any, out_path: Path) -> 
         label="Logistic model",
         zorder=2,
     )
-    ax.scatter(
+    ax_top.scatter(
         bucket_df["prior_count"],
         bucket_df["probability"],
-        s=np.sqrt(bucket_df["n"]) * 18,
+        s=36,
         color=POINT_COLOR,
         alpha=0.75,
         label="Observed rate",
         zorder=3,
     )
 
-    ax.set_xlabel("Number of prior anthologies selecting a work")
-    ax.set_ylabel("Probability of selection for NAAAL 2025")
-    ax.set_title(
+    ax_top.set_ylabel("Probability of selection for NAAAL 2025")
+    ax_top.set_title(
         "Work selection probability for the 2025 Norton Anthology\n"
         "of African American Literature (4th edition)"
     )
-    ax.set_xlim(0, int(works["prior_count"].max()) + 0.5)
-    ax.set_ylim(-0.02, 1.02)
-    ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
-    ax.grid(True, alpha=0.25, linestyle=":")
-    ax.legend(frameon=False)
+    ax_top.set_xlim(0, int(works["prior_count"].max()) + 0.5)
+    ax_top.set_ylim(-0.02, 1.02)
+    ax_top.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+    ax_top.grid(True, alpha=0.25, linestyle=":")
+    ax_top.legend(frameon=False)
+
+    ax_bot.bar(bucket_df["prior_count"], bucket_df["n"], color=POINT_COLOR, alpha=0.6, width=0.5)
+    ax_bot.set_xlabel("Number of prior anthologies selecting a work")
+    ax_bot.set_ylabel("N works (≥ k)" if cumulative else "N works")
+    ax_bot.grid(True, alpha=0.25, linestyle=":", axis="y")
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
@@ -183,6 +200,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-file", type=Path, default=DATA_FILE)
     parser.add_argument("--out", type=Path, default=FIG_OUT)
+    parser.add_argument("--out-cumulative", type=Path, default=FIG_OUT_CUMULATIVE)
     return parser.parse_args()
 
 
@@ -198,6 +216,7 @@ def main() -> None:
     curve_df = predicted_probabilities(result, int(works["prior_count"].max()), min_prior_count=0)
 
     plot_probability_curve(works, result, args.out)
+    plot_probability_curve(works, result, args.out_cumulative, cumulative=True)
 
     zero_prior_in_target = int(
         (
@@ -217,6 +236,7 @@ def main() -> None:
         f"{curve_df['probability'].min():.3f} to {curve_df['probability'].max():.3f}"
     )
     print(f"Saved figure                     : {args.out}")
+    print(f"Saved figure (cumulative)        : {args.out_cumulative}")
 
 
 if __name__ == "__main__":
