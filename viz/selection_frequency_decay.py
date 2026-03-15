@@ -85,17 +85,15 @@ def plot(
 ) -> None:
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    scale = 1.5   # pct × scale → scatter area in points²
-
     work_label   = f"Works (N={n_works})"
     author_label = f"Authors (N={n_authors})"
 
     ax.plot(work_ks, work_pcts, color=WORK_COLOR, linewidth=0.8, alpha=0.4, zorder=2)
-    ax.scatter(work_ks, work_pcts, s=work_pcts * scale,
+    ax.scatter(work_ks, work_pcts,
                color=WORK_COLOR, marker="o", zorder=3, label=work_label)
 
     ax.plot(auth_ks, auth_pcts, color=AUTHOR_COLOR, linewidth=0.8, alpha=0.4, zorder=2)
-    ax.scatter(auth_ks, auth_pcts, s=auth_pcts * scale,
+    ax.scatter(auth_ks, auth_pcts,
                color=AUTHOR_COLOR, marker="s", zorder=3, label=author_label)
 
     ax.set_xlabel("Number of anthology editions selecting an item", fontsize=11)
