@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
@@ -106,6 +107,57 @@ def aggregate_by_year(opps: pd.DataFrame) -> pd.DataFrame:
     )
     agg["rate"] = agg["reselections"] / agg["opportunities"]
     return agg
+
+
+def aggregate_by_edition(opps: pd.DataFrame) -> pd.DataFrame:
+    """Per (edition_key, ek_year, gender_group): opportunities, reselections, rate."""
+    agg = (
+        opps.groupby(["edition_key", "ek_year", "gender_group"])
+        .agg(
+            opportunities=("selected", "count"),
+            reselections=("selected", "sum"),
+        )
+        .reset_index()
+    )
+    agg["rate"] = agg["reselections"] / agg["opportunities"]
+    return agg
+
+
+def _cum_by_ek(opps: pd.DataFrame) -> pd.DataFrame:
+    """Cumulative reselection rate per (edition_key, gender_group) in chronological order.
+
+    Returns a DataFrame with columns:
+        edition_key, ek_year, position, gender_group, cum_rate (None before first opportunity).
+    """
+    ek_agg = aggregate_by_edition(opps)
+    order = (
+        opps[["edition_key", "ek_year"]]
+        .drop_duplicates()
+        .sort_values(["ek_year", "edition_key"])
+        .reset_index(drop=True)
+    )
+    order["position"] = range(len(order))
+
+    rows = []
+    for gender in sorted(opps["gender_group"].unique()):
+        g_agg = ek_agg[ek_agg["gender_group"] == gender].set_index("edition_key")
+        cum_opps = 0
+        cum_sel = 0
+        for _, ek_row in order.iterrows():
+            ek = ek_row["edition_key"]
+            if ek in g_agg.index:
+                cum_opps += int(g_agg.loc[ek, "opportunities"])
+                cum_sel += int(g_agg.loc[ek, "reselections"])
+            rows.append(
+                {
+                    "edition_key": ek,
+                    "ek_year": ek_row["ek_year"],
+                    "position": int(ek_row["position"]),
+                    "gender_group": gender,
+                    "cum_rate": cum_sel / cum_opps if cum_opps > 0 else None,
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def compute_cumulative(agg: pd.DataFrame) -> pd.DataFrame:
@@ -273,62 +325,99 @@ def _print_gender_coefs(model) -> None:
     print(gender_rows.to_string(float_format=lambda x: f"{x:.4f}"))
 
 
-# ── Figure ─────────────────────────────────────────────────────────────────────
+# ── Figures ────────────────────────────────────────────────────────────────────
 
 
-def plot_gender_reselection(
-    cum_df: pd.DataFrame, agg_df: pd.DataFrame, out_path: Path
-) -> None:
-    """Render two-panel gender reselection figure."""
-    fig, (ax_top, ax_bot) = plt.subplots(2, 1, figsize=(13, 10))
-
-    # Top panel: cumulative reselection rate over time
-    for gender, grp in cum_df.groupby("gender_group"):
-        color = GENDER_COLORS.get(gender, C_GRAY)
-        grp_sorted = grp.sort_values("ek_year")
-        ax_top.plot(
-            grp_sorted["ek_year"],
-            grp_sorted["cum_rate"],
-            color=color,
-            label=gender,
-            linewidth=2.0,
-        )
-
-    ax_top.set_ylim(0, 1)
-    ax_top.set_ylabel("Cumulative reselection rate")
-    ax_top.set_title("Cumulative author reselection rate by gender")
-    ax_top.legend(frameon=False)
-    ax_top.grid(True, **GRID_KW)
-
-    # Bottom panel: per-anthology rate vs. opportunities
-    overall_rate = agg_df["reselections"].sum() / agg_df["opportunities"].sum()
-    for gender, grp in agg_df.groupby("gender_group"):
-        color = GENDER_COLORS.get(gender, C_GRAY)
-        ax_bot.scatter(
-            grp["opportunities"],
-            grp["rate"],
-            color=color,
-            alpha=0.7,
-            label=gender,
-        )
-
-    ax_bot.axhline(
-        overall_rate,
-        color="black",
-        linestyle="--",
-        lw=1.0,
-        label=f"Overall avg ({overall_rate:.2f})",
+def _xtick_labels(cum_ek: pd.DataFrame) -> tuple[list[int], list[str]]:
+    """Return (positions, labels) for x-axis, one entry per edition ordered by position."""
+    order = (
+        cum_ek[["edition_key", "ek_year", "position"]]
+        .drop_duplicates()
+        .sort_values("position")
     )
-    ax_bot.set_xlabel("Opportunities")
-    ax_bot.set_ylabel("Reselection rate")
-    ax_bot.set_title("Reselection rate vs. opportunities by gender per anthology")
-    ax_bot.legend(frameon=False)
-    ax_bot.grid(True, **GRID_KW)
+    # Append letter suffix when multiple editions share a year
+    year_counts = order["ek_year"].value_counts()
+    year_seen: dict[int, int] = {}
+    labels = []
+    for _, row in order.iterrows():
+        year = int(row["ek_year"])
+        if year_counts[year] > 1:
+            idx = year_seen.get(year, 0)
+            labels.append(f"{year}{'abcdefgh'[idx]}")
+            year_seen[year] = idx + 1
+        else:
+            labels.append(str(year))
+    return order["position"].tolist(), labels
+
+
+def plot_points(cum_ek: pd.DataFrame, out_path: Path) -> None:
+    """Cumulative reselection rate per anthology, one point per (edition, gender)."""
+    positions, labels = _xtick_labels(cum_ek)
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+
+    for gender, grp in cum_ek.groupby("gender_group"):
+        color = GENDER_COLORS.get(gender, C_GRAY)
+        g = grp.sort_values("position").dropna(subset=["cum_rate"])
+        ax.plot(g["position"], g["cum_rate"], color=color, linewidth=1.5, alpha=0.5)
+        ax.scatter(g["position"], g["cum_rate"], color=color, s=40, label=gender, zorder=3)
+
+    ax.set_xticks(positions)
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Cumulative reselection rate")
+    ax.set_title("Cumulative author reselection rate by gender, per anthology")
+    ax.legend(frameon=False)
+    ax.grid(True, **GRID_KW)
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
-    print(f"\nSaved {out_path}")
+    print(f"Saved {out_path}")
+
+
+def plot_diverging(cum_ek: pd.DataFrame, out_path: Path) -> None:
+    """Diverging bar chart: Female − Male cumulative rate per anthology.
+
+    Bars above zero = female leads; bars below zero = male leads.
+    """
+    positions, labels = _xtick_labels(cum_ek)
+
+    male = cum_ek[cum_ek["gender_group"] == "Male"].set_index("position")["cum_rate"]
+    female = cum_ek[cum_ek["gender_group"] == "Female"].set_index("position")["cum_rate"]
+
+    diffs = []
+    colors = []
+    for pos in positions:
+        m = male.get(pos)
+        f = female.get(pos)
+        if m is not None and f is not None and pd.notna(m) and pd.notna(f):
+            d = float(f) - float(m)
+        else:
+            d = 0.0
+        diffs.append(d)
+        colors.append(C_RED if d >= 0 else C_BLUE)
+
+    fig, ax = plt.subplots(figsize=(14, 5))
+    ax.bar(positions, diffs, color=colors, width=0.7)
+    ax.axhline(0, color="black", lw=1.0)
+
+    ax.set_xticks(positions)
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    ax.set_ylabel("Female − Male cumulative reselection rate")
+    ax.set_title("Gender gap in cumulative reselection rate per anthology (Female − Male)")
+
+    legend_handles = [
+        mpatches.Patch(facecolor=C_RED, label="Female higher"),
+        mpatches.Patch(facecolor=C_BLUE, label="Male higher"),
+    ]
+    ax.legend(handles=legend_handles, frameon=False)
+    ax.grid(True, axis="y", **GRID_KW)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -346,13 +435,12 @@ def main() -> None:
     print(f"\nTotal opportunities : {len(opps_df)}")
     print(f"Total reselections  : {opps_df['selected'].sum()}")
 
-    agg_df = aggregate_by_year(opps_df)
-    cum_df = compute_cumulative(agg_df)
+    cum_ek = _cum_by_ek(opps_df)
 
     print_statistics(opps_df)
 
-    out_path = OUT_DIR / "gender_reselection.png"
-    plot_gender_reselection(cum_df, agg_df, out_path)
+    plot_points(cum_ek, OUT_DIR / "gender_reselection_points.png")
+    plot_diverging(cum_ek, OUT_DIR / "gender_reselection_diverging.png")
 
 
 if __name__ == "__main__":
