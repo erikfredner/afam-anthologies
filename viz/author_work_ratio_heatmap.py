@@ -11,10 +11,13 @@ shared works span fewer unique authors (some authors have multiple shared works)
 Diagonal = total unique authors / total unique works for that edition.
 
 Cells where works-in-common = 0 are masked (shown in grey).
+Within-series pairs (e.g. NAAAL ed.1 vs NAAAL ed.2) are masked by default;
+use --include-within-series to show them.
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 from pathlib import Path
 
@@ -22,21 +25,19 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import psycopg
+from dotenv import dotenv_values
 
 
-WORK_DATA_FILE = (
-    Path(__file__).parent.parent / "data" / "2026-03-13 work ids in afam anthologies.csv"
-)
-AUTHOR_DATA_FILE = (
-    Path(__file__).parent.parent / "data" / "2026-03-13 author ids in afam anthologies.csv"
-)
+ENV_FILE = Path(__file__).parent.parent / ".env"
+QUERIES  = Path(__file__).parent.parent / "queries"
 OUT_FILE = Path(__file__).parent / "author_work_ratio_heatmap.png"
 
-SERIES_ABBREV: dict[str, str] = {
-    "The Norton Anthology of African American Literature":          "NAAAL",
-    "Afro-American Writing: An Anthology of Prose and Poetry":     "Afro-Am. Writing",
-    "African American Literature":                                  "AAL Anthology",
-    "The Wiley Blackwell Anthology of African American Literature": "Wiley Blackwell AAL",
+SERIES_ID_ABBREV: dict[str, str] = {
+    "3":  "NAAAL",
+    "8":  "Afro-Am. Writing",
+    "12": "AAL Anthology",
+    "17": "Wiley Blackwell AAL",
 }
 
 STANDALONE_SHORT: dict[str, str] = {
@@ -56,100 +57,106 @@ STANDALONE_SHORT: dict[str, str] = {
     "49":  "Call & Response",
     "39":  "Prentice Hall AAL",
     "86":  "Afr. Am. Lit.",
+    "50":  "Blackamerican Lit.",
+    "40":  "New Cavalcade v.1",
+    "41":  "New Cavalcade v.2",
 }
 
-MULTIVOL_SHORT: dict[str, str] = {
-    "Blackamerican Literature, 1760-Present|1":                                        "Blackamerican Lit.",
-    "The New Cavalcade: African American Writing from 1760 to the Present|1":         "New Cavalcade",
-}
+
+# ── DB helpers ────────────────────────────────────────────────────────────────
 
 
-# ── 1. Load ───────────────────────────────────────────────────────────────────
-
-def load() -> tuple[pd.DataFrame, pd.DataFrame]:
-    df_works   = pd.read_csv(WORK_DATA_FILE,   dtype=str, na_filter=False)
-    df_authors = pd.read_csv(AUTHOR_DATA_FILE, dtype=str, na_filter=False)
-    return df_works, df_authors
-
-
-# ── 2. Assign edition keys ────────────────────────────────────────────────────
-
-def _strip_volume(title: str) -> str:
-    """Remove trailing ', vol. N' / ', Volume N' markers."""
-    return re.sub(r",?\s+[Vv]ol\.?\s+\d+\s*$", "", title).strip()
+def parse_db_params(env_file: Path) -> dict[str, str]:
+    env = dotenv_values(env_file)
+    raw = env["DATABASE_URL"]
+    return {
+        "host":     re.search(r"-h\s+(\S+)", raw).group(1),
+        "user":     re.search(r"-U\s+(\S+)", raw).group(1),
+        "password": re.search(r"PGPASSWORD=(\S+)", raw).group(1),
+        "dbname":   raw.split()[-1],
+    }
 
 
-def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
-    meta_rows: list[dict] = []
-    for _, r in (
-        df[["anthology_id", "anthology_title", "series",
-            "edition_number", "volume", "publication_year"]]
-        .drop_duplicates()
-        .iterrows()
-    ):
-        series  = r["series"].strip()
-        edition = r["edition_number"].strip()
-        volume  = r["volume"].strip()
-        title   = r["anthology_title"].strip()
-        year    = int(r["publication_year"])
-        aid     = r["anthology_id"]
-
-        if series:
-            key = f"{series}|{edition}"
-        elif volume:
-            key = f"{_strip_volume(title)}|{edition}"
-        else:
-            key = aid
-
-        meta_rows.append({"anthology_id": aid, "edition_key": key, "sort_year": year})
-
-    return df.merge(pd.DataFrame(meta_rows), on="anthology_id")
+def query_db(params: dict[str, str], sql_file: Path) -> pd.DataFrame:
+    sql = sql_file.read_text()
+    with psycopg.connect(**params) as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        cols = [desc.name for desc in cur.description]
+        return pd.DataFrame(cur.fetchall(), columns=cols)
 
 
-# ── 3. Build per-edition sets ─────────────────────────────────────────────────
-
-def build_work_sets(df: pd.DataFrame) -> dict[str, set[str]]:
-    return {key: set(grp["work_id"]) for key, grp in df.groupby("edition_key")}
+# ── Load and prepare ──────────────────────────────────────────────────────────
 
 
-def build_author_sets(df: pd.DataFrame) -> dict[str, set[str]]:
-    return {key: set(grp["author_id"]) for key, grp in df.groupby("edition_key")}
+def load_and_prepare_db(
+    params: dict[str, str],
+) -> tuple[dict[str, set], dict[str, set], dict[str, int]]:
+    df = query_db(params, QUERIES / "work-selection-divergence.sql")
+
+    df["edition_key"] = df.apply(
+        lambda r: (
+            f"{int(r['series_id'])}|{r['edition_number']}"
+            if pd.notna(r["series_id"])
+            else str(r["edition_id"])
+        ),
+        axis=1,
+    )
+
+    work_sets: dict[str, set] = {
+        key: set(grp["work_id"].dropna().astype(str))
+        for key, grp in df.groupby("edition_key")
+    }
+    author_sets: dict[str, set] = {
+        key: set(grp["author_id"].dropna().astype(str))
+        for key, grp in df.groupby("edition_key")
+    }
+    year_map: dict[str, int] = (
+        df.groupby("edition_key")["anthology_publication_year"].min().astype(int).to_dict()
+    )
+    return work_sets, author_sets, year_map
 
 
-# ── 4. Ordering and labels ────────────────────────────────────────────────────
-
-def sort_year_for(key: str, df: pd.DataFrame) -> int:
-    return df.loc[df["edition_key"] == key, "sort_year"].min()
+# ── Labels ────────────────────────────────────────────────────────────────────
 
 
-def make_label(key: str, df: pd.DataFrame) -> str:
-    year = sort_year_for(key, df)
-    if "|" in key:
-        head, edition = key.rsplit("|", 1)
-        if head in SERIES_ABBREV:
-            return f"{SERIES_ABBREV[head]} ed.{edition}\n{year}"
-        if key in MULTIVOL_SHORT:
-            return f"{MULTIVOL_SHORT[key]}\n{year}"
-        return f"{head[:20]}\n{year}"
-    short = STANDALONE_SHORT.get(key, key[:20])
+def make_label(edition_key: str, year: int) -> str:
+    if "|" in edition_key:
+        series_id, edition = edition_key.rsplit("|", 1)
+        abbrev = SERIES_ID_ABBREV.get(series_id, series_id)
+        return f"{abbrev} ed.{edition}\n{year}"
+    short = STANDALONE_SHORT.get(edition_key, edition_key[:20])
     return f"{short}\n{year}"
 
 
-# ── 5. Ratio matrix ───────────────────────────────────────────────────────────
+# ── Series helpers ────────────────────────────────────────────────────────────
+
+
+def _same_series(ki: str, kj: str) -> bool:
+    """True when both keys belong to the same named series."""
+    if "|" not in ki or "|" not in kj:
+        return False
+    return ki.rsplit("|", 1)[0] == kj.rsplit("|", 1)[0]
+
+
+# ── Ratio matrix ──────────────────────────────────────────────────────────────
+
 
 def ratio_matrix(
     keys: list[str],
-    work_sets: dict[str, set[str]],
-    author_sets: dict[str, set[str]],
+    work_sets: dict[str, set],
+    author_sets: dict[str, set],
+    cross_series_only: bool = True,
 ) -> np.ndarray:
     """Cell (i, j) = |authors_i ∩ authors_j| / |works_i ∩ works_j|.
 
-    NaN when works-in-common = 0.
+    NaN when works-in-common = 0 or the pair is filtered by cross_series_only.
     """
     n = len(keys)
     mat = np.full((n, n), np.nan)
     for i, ki in enumerate(keys):
         for j, kj in enumerate(keys):
+            if cross_series_only and ki != kj and _same_series(ki, kj):
+                continue
             works_common   = len(work_sets.get(ki, set())   & work_sets.get(kj, set()))
             authors_common = len(author_sets.get(ki, set()) & author_sets.get(kj, set()))
             if works_common > 0:
@@ -157,7 +164,8 @@ def ratio_matrix(
     return mat
 
 
-# ── 6. Plot ───────────────────────────────────────────────────────────────────
+# ── Plot ──────────────────────────────────────────────────────────────────────
+
 
 def plot(
     mat: np.ndarray,
@@ -170,7 +178,6 @@ def plot(
     valid = mat[~np.isnan(mat)]
     vmin = float(np.min(valid))
     vmax = float(np.max(valid))
-    # Ensure the diverging norm has room on both sides of 1.0
     norm = mcolors.TwoSlopeNorm(
         vcenter=1.0,
         vmin=min(vmin, 0.95),
@@ -199,7 +206,7 @@ def plot(
 
     ax.set_title(
         "Authors in common vs. works in common between anthology editions\n"
-        "(cell = authors shared / works shared; grey = no shared works; "
+        "(cell = authors shared / works shared; grey = no shared works or within-series pair; "
         "blue > 1 = more authors than works shared)",
         fontsize=11,
         pad=14,
@@ -209,26 +216,43 @@ def plot(
     print(f"Saved → {out}")
 
 
-# ── 7. Main ───────────────────────────────────────────────────────────────────
+# ── Argparse ──────────────────────────────────────────────────────────────────
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Heatmap of authors-in-common / works-in-common for AFAM anthology pairs"
+    )
+    parser.add_argument(
+        "--include-within-series",
+        action="store_true",
+        help=(
+            "Include within-series pairs (e.g. NAAAL ed.1 vs NAAAL ed.2). "
+            "Excluded by default to avoid inflating aggregate statistics."
+        ),
+    )
+    return parser.parse_args()
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
-    df_works, df_authors = load()
-    df_works   = assign_edition_key(df_works)
-    df_authors = assign_edition_key(df_authors)
+    args = parse_args()
+    cross_series_only = not args.include_within_series
 
-    work_sets   = build_work_sets(df_works)
-    author_sets = build_author_sets(df_authors)
+    params = parse_db_params(ENV_FILE)
+    work_sets, author_sets, year_map = load_and_prepare_db(params)
 
-    # Order by publication year, using the work file as authority
     all_keys = sorted(
         set(work_sets) | set(author_sets),
-        key=lambda k: sort_year_for(k, df_works),
+        key=lambda k: year_map.get(k, 0),
     )
-    labels = [make_label(k, df_works) for k in all_keys]
+    labels = [make_label(k, year_map.get(k, 0)) for k in all_keys]
 
     OUT_FILE.parent.mkdir(exist_ok=True)
 
-    mat = ratio_matrix(all_keys, work_sets, author_sets)
+    mat = ratio_matrix(all_keys, work_sets, author_sets, cross_series_only=cross_series_only)
 
     # ── Summary statistic: % of distinct pairings where authors > works ───────
     n = len(all_keys)
@@ -236,6 +260,8 @@ def main() -> None:
     pairs_authors_gt_works = 0
     for i in range(n):
         for j in range(i + 1, n):  # upper triangle only — each pair counted once
+            if cross_series_only and _same_series(all_keys[i], all_keys[j]):
+                continue
             v = mat[i, j]
             if not np.isnan(v):
                 total_pairs += 1
