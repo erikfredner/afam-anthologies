@@ -17,7 +17,9 @@ import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import psycopg
 import seaborn as sns
+from dotenv import dotenv_values
 
 try:
     from adjustText import adjust_text
@@ -27,9 +29,8 @@ except ImportError:
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
-DATA_FILE = (
-    Path(__file__).parent.parent / "data" / "2026-03-13 works per afam anthology.csv"
-)
+ENV_FILE = Path(__file__).parent.parent / ".env"
+QUERIES = Path(__file__).parent.parent / "queries"
 OUT_DIR = Path(__file__).parent
 
 
@@ -117,19 +118,44 @@ def last_name(full_name: str) -> str:
     return parts[-1] if parts else full_name
 
 
+# ── DB helpers ────────────────────────────────────────────────────────────────
+
+
+def parse_db_params(env_file: Path) -> dict[str, str]:
+    env = dotenv_values(env_file)
+    raw = env["DATABASE_URL"]
+    return {
+        "host":     re.search(r"-h\s+(\S+)", raw).group(1),
+        "user":     re.search(r"-U\s+(\S+)", raw).group(1),
+        "password": re.search(r"PGPASSWORD=(\S+)", raw).group(1),
+        "dbname":   raw.split()[-1],
+    }
+
+
+def query_db(params: dict[str, str], sql_file: Path) -> pd.DataFrame:
+    sql = sql_file.read_text()
+    with psycopg.connect(**params) as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        cols = [desc.name for desc in cur.description]
+        return pd.DataFrame(cur.fetchall(), columns=cols)
+
+
 # ── Load and prepare ───────────────────────────────────────────────────────────
 
 
-def load_and_prepare(data_file: Path) -> pd.DataFrame:
-    df = pd.read_csv(data_file, dtype=str, na_filter=False)
-    print(f"Loaded {len(df)} rows, {df['anthology_id'].nunique()} raw anthologies")
+def load_and_prepare_db(params: dict[str, str]) -> pd.DataFrame:
+    df = query_db(params, QUERIES / "work-selection-divergence.sql")
+    print(f"Loaded {len(df)} rows, {df['edition_id'].nunique()} raw anthologies")
 
-    # Build edition_key: series_id|edition when series, else anthology_id
+    # Drop authorless works
+    df = df[df["author_id"].notna()].copy()
+
+    # Build edition_key: series_id|edition_number when series, else str(edition_id)
     df["edition_key"] = df.apply(
         lambda r: (
-            f"{r['series_id']}|{r['anthology_edition']}"
-            if r["series_id"].strip()
-            else r["anthology_id"]
+            f"{int(r['series_id'])}|{r['edition_number']}"
+            if pd.notna(r["series_id"])
+            else str(r["edition_id"])
         ),
         axis=1,
     )
@@ -148,36 +174,12 @@ def load_and_prepare(data_file: Path) -> pd.DataFrame:
     # Normalize work titles
     df["norm_title"] = df["work_title"].apply(normalize_title)
 
-    # Report potential merge candidates
-    title_id_pairs = df.groupby("norm_title")["work_id"].nunique()
-    multi = title_id_pairs[title_id_pairs > 1]
-    if len(multi):
-        print(f"  {len(multi)} norm_titles match multiple work_ids (potential merges)")
     print(f"  Unique work_ids: {df['work_id'].nunique()}")
     print(f"  Unique norm_titles: {df['norm_title'].nunique()}")
-
-    # Explode multi-author rows — split author_ids on "," and author_names on ";"
-    df["_pairs"] = df.apply(
-        lambda r: list(
-            zip(
-                [i.strip() for i in r["author_ids"].split(",") if i.strip()],
-                [n.strip() for n in r["author_names"].split(";") if n.strip()],
-            )
-        ),
-        axis=1,
-    )
-
-    # Keep only rows with at least one author
-    df_auth = df[df["_pairs"].apply(len) > 0].copy()
-    df_auth = df_auth.explode("_pairs")
-    df_auth["author_id"] = df_auth["_pairs"].apply(lambda p: p[0])
-    df_auth["author_name"] = df_auth["_pairs"].apply(lambda p: p[1])
-    long = df_auth.drop(columns=["_pairs"])
-
-    print(f"  Unique edition_keys: {long['edition_key'].nunique()}")
-    print(f"  Unique authors: {long['author_id'].nunique()}")
-    print(f"  Total long rows: {len(long)}")
-    return long
+    print(f"  Unique edition_keys: {df['edition_key'].nunique()}")
+    print(f"  Unique authors: {df['author_id'].nunique()}")
+    print(f"  Total rows: {len(df)}")
+    return df
 
 
 # ── Save figure ────────────────────────────────────────────────────────────────
@@ -469,12 +471,13 @@ def fig4_work_frequency(long: pd.DataFrame, out_dir: Path) -> float:
 def _parse_birth_year(raw_vals: pd.Series) -> int | None:
     """Return the first clean 4-digit birth year found in the series."""
     for val in raw_vals:
-        try:
-            yr = int(val.strip())
-            if 1600 <= yr <= 2000:
-                return yr
-        except ValueError:
-            pass
+        if pd.notna(val):
+            try:
+                yr = int(val)
+                if 1600 <= yr <= 2000:
+                    return yr
+            except (ValueError, TypeError):
+                pass
     return None
 
 
@@ -519,7 +522,7 @@ def fig5_jaccard(
     # Build birth-year lookup for sort order
     birth_years: dict[str, int] = {}
     for aid in top10_ids:
-        yr = _parse_birth_year(long.loc[long["author_id"] == aid, "author_birth_years"])
+        yr = _parse_birth_year(long.loc[long["author_id"] == aid, "author_birth_year"])
         if yr is not None:
             birth_years[aid] = yr
 
@@ -747,7 +750,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Six figures on work selection divergence in African American lit anthologies"
     )
-    parser.add_argument("--data-file", type=Path, default=DATA_FILE)
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
     return parser.parse_args()
 
@@ -757,7 +759,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    long = load_and_prepare(args.data_file)
+    params = parse_db_params(ENV_FILE)
+    long = load_and_prepare_db(params)
 
     author_ant_count, author_work_count, work_pop, author_name_lookup = (
         build_shared_tables(long)
