@@ -26,33 +26,48 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import pandas as pd
+import psycopg
+from dotenv import dotenv_values
 from scipy.stats import binomtest, chi2_contingency, wilcoxon
 
 
-DATA_FILE = (
-    Path(__file__).parent.parent / "data" / "2026-03-13 works per afam anthology.csv"
-)
+ENV_FILE = Path(__file__).parent.parent / ".env"
+QUERIES = Path(__file__).parent.parent / "queries"
 BIRTH_YEAR_WINDOW = 5
 
 
-# ── Edition-key logic ─────────────────────────────────────────────────────────
+# ── DB helpers ────────────────────────────────────────────────────────────────
 
 
-def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["edition_key"] = df.apply(
-        lambda r: (
-            f"{r['series_id']}|{r['anthology_edition']}"
-            if r["series_id"].strip()
-            else r["anthology_id"]
-        ),
-        axis=1,
-    )
+def parse_db_params(env_file: Path) -> dict[str, str]:
+    env = dotenv_values(env_file)
+    raw = env["DATABASE_URL"]
+    return {
+        "host":     re.search(r"-h\s+(\S+)", raw).group(1),
+        "user":     re.search(r"-U\s+(\S+)", raw).group(1),
+        "password": re.search(r"PGPASSWORD=(\S+)", raw).group(1),
+        "dbname":   raw.split()[-1],
+    }
+
+
+def query_db(params: dict[str, str], sql_file: Path) -> pd.DataFrame:
+    sql = sql_file.read_text()
+    with psycopg.connect(**params) as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        cols = [desc.name for desc in cur.description]
+        return pd.DataFrame(cur.fetchall(), columns=cols)
+
+
+def load_data(params: dict[str, str], only_root_works: bool = False) -> pd.DataFrame:
+    df = query_db(params, QUERIES / "works-per-afam-edition.sql")
+    if only_root_works:
+        df = df[df["parent_id"].isna()]
     return df
 
 
@@ -61,39 +76,23 @@ def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
 
 def precompute_birth_years(
     df: pd.DataFrame,
-) -> tuple[dict[str, int], dict[str, int]]:
+) -> tuple[dict, dict]:
     """Return (work_max_birth_year, author_birth_year).
 
     work_max_birth_year: work_id → max author birth year for that work.
     author_birth_year:   author_id → birth year.
     """
-    work_max_by: dict[str, int] = {}
-    author_by: dict[str, int] = {}
+    work_max_by: dict = {}
+    author_by: dict = {}
 
-    for _, row in df.iterrows():
-        wid = row["work_id"].strip()
-        aids_raw = row["author_ids"].strip()
-        bys_raw = row["author_birth_years"].strip()
-        if not aids_raw or not bys_raw:
-            continue
-        aids = [a.strip() for a in aids_raw.split(",") if a.strip()]
-        bys_strs = [b.strip() for b in bys_raw.split(",") if b.strip()]
-        years: list[int] = []
-        for by_str in bys_strs:
-            try:
-                years.append(int(by_str))
-            except ValueError:
-                pass
-        # Map author_id → birth_year (first mapping wins)
-        for aid, yr in zip(aids, years):
-            if aid not in author_by:
-                author_by[aid] = yr
-        # work_max_birth_year: take max across all appearances
-        if wid and years:
-            existing = work_max_by.get(wid)
-            new_max = max(years)
-            if existing is None or new_max > existing:
-                work_max_by[wid] = new_max
+    for _, row in df.dropna(subset=["author_birth_year"]).iterrows():
+        by = int(row["author_birth_year"])
+        aid = row["author_id"]
+        wid = row["work_id"]
+        if aid not in author_by:
+            author_by[aid] = by
+        if wid not in work_max_by or by > work_max_by[wid]:
+            work_max_by[wid] = by
 
     return work_max_by, author_by
 
@@ -101,25 +100,20 @@ def precompute_birth_years(
 # ── Author expansion ──────────────────────────────────────────────────────────
 
 
-def expand_authors(df: pd.DataFrame) -> dict[str, set[str]]:
-    """Return {edition_key: set of author_ids}."""
-    ed_authors: dict[str, set[str]] = {}
-    for _, row in df.iterrows():
-        aids_raw = row["author_ids"].strip()
-        if not aids_raw:
-            continue
-        ek = row["edition_key"]
-        aids = {a.strip() for a in aids_raw.split(",") if a.strip()}
-        ed_authors.setdefault(ek, set()).update(aids)
-    return ed_authors
+def expand_authors(df: pd.DataFrame) -> dict[object, set]:
+    """Return {edition_id: set of author_ids}."""
+    return {
+        eid: set(g["author_id"].dropna())
+        for eid, g in df.groupby("edition_id")
+    }
 
 
 # ── Edition ordering ──────────────────────────────────────────────────────────
 
 
-def sorted_edition_keys(df: pd.DataFrame) -> list[str]:
-    ed_year = df.groupby("edition_key")["anthology_publication_year"].min()
-    return [ek for ek, _ in sorted(ed_year.items(), key=lambda x: (x[1], x[0]))]
+def sorted_edition_ids(df: pd.DataFrame) -> list:
+    ed_year = df.groupby("edition_id")["anthology_publication_year"].min()
+    return [eid for eid, _ in sorted(ed_year.items(), key=lambda x: (x[1], x[0]))]
 
 
 # ── Per-edition statistics ────────────────────────────────────────────────────
@@ -127,37 +121,40 @@ def sorted_edition_keys(df: pd.DataFrame) -> list[str]:
 
 def compute_per_edition_stats(
     df: pd.DataFrame,
-    ed_authors: dict[str, set[str]],
-    sorted_editions: list[str],
-    work_max_by: dict[str, int],
-    author_by: dict[str, int],
+    ed_authors: dict[object, set],
+    sorted_editions: list,
+    work_max_by: dict,
+    author_by: dict,
     window: int,
 ) -> pd.DataFrame:
     """Return DataFrame with one row per non-first edition."""
-    all_work_ids: set[str] = set(w.strip() for w in df["work_id"] if w.strip())
-    all_author_ids: set[str] = set()
+    ed_works: dict[object, set] = {
+        eid: set(g["work_id"]) for eid, g in df.groupby("edition_id")
+    }
+
+    all_work_ids: set = set(df["work_id"])
+    all_author_ids: set = set()
     for aids in ed_authors.values():
         all_author_ids.update(aids)
 
     global_max_by = max(work_max_by.values()) if work_max_by else 1950
-    ed_year = df.groupby("edition_key")["anthology_publication_year"].min()
+    ed_year = df.groupby("edition_id")["anthology_publication_year"].min()
 
     rows: list[dict] = []
-    seen_works: set[str] = set()
-    seen_authors: set[str] = set()
+    seen_works: set = set()
+    seen_authors: set = set()
 
-    for i, ek in enumerate(sorted_editions):
-        ed_df = df[df["edition_key"] == ek]
-        ed_works = set(w.strip() for w in ed_df["work_id"] if w.strip())
-        ed_auths = ed_authors.get(ek, set())
+    for i, eid in enumerate(sorted_editions):
+        ed_w = ed_works.get(eid, set())
+        ed_a = ed_authors.get(eid, set())
 
         if i == 0:
-            seen_works.update(ed_works)
-            seen_authors.update(ed_auths)
+            seen_works.update(ed_w)
+            seen_authors.update(ed_a)
             continue
 
         # Cutoff: max birth year of authors in this edition + window
-        by_in_edition = [author_by[a] for a in ed_auths if a in author_by]
+        by_in_edition = [author_by[a] for a in ed_a if a in author_by]
         cutoff = (max(by_in_edition) if by_in_edition else global_max_by) + window
 
         # Contemporaneous pools
@@ -165,16 +162,16 @@ def compute_per_edition_stats(
         pool_authors = {a for a in all_author_ids if author_by.get(a, cutoff) <= cutoff}
 
         # Slots: edition's works/authors that fall within the contemporaneous pool
-        w_slots = len(ed_works & pool_works)
-        a_slots = len(ed_auths & pool_authors)
+        w_slots = len(ed_w & pool_works)
+        a_slots = len(ed_a & pool_authors)
 
         # Seen-before sets restricted to the contemporaneous pool
         seen_works_filt = seen_works & pool_works
         seen_authors_filt = seen_authors & pool_authors
 
         # Reselections
-        w_resel = len(ed_works & seen_works_filt)
-        a_resel = len(ed_auths & seen_authors_filt)
+        w_resel = len(ed_w & seen_works_filt)
+        a_resel = len(ed_a & seen_authors_filt)
 
         # Chance rates
         p_w_chance = len(seen_works_filt) / len(pool_works) if pool_works else 0.0
@@ -182,8 +179,8 @@ def compute_per_edition_stats(
 
         rows.append(
             {
-                "edition_key": ek,
-                "year": int(ed_year[ek]),
+                "edition_id": eid,
+                "year": int(ed_year[eid]),
                 "cutoff": cutoff,
                 "pool_works": len(pool_works),
                 "pool_authors": len(pool_authors),
@@ -196,8 +193,8 @@ def compute_per_edition_stats(
             }
         )
 
-        seen_works.update(ed_works)
-        seen_authors.update(ed_auths)
+        seen_works.update(ed_w)
+        seen_authors.update(ed_a)
 
     return pd.DataFrame(rows)
 
@@ -451,19 +448,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    df = pd.read_csv(DATA_FILE, dtype=str, na_filter=False)
-    df["anthology_publication_year"] = df["anthology_publication_year"].astype(int)
+    params = parse_db_params(ENV_FILE)
+    df = load_data(params, only_root_works=args.only_root_works)
 
-    if args.only_root_works:
-        df = df[
-            (df["parent_work_id"].str.strip() == "")
-            & (df["parent_work_title"].str.strip() == "")
-        ]
-
-    df = assign_edition_key(df)
     work_max_by, author_by = precompute_birth_years(df)
     ed_authors = expand_authors(df)
-    sorted_editions = sorted_edition_keys(df)
+    sorted_editions = sorted_edition_ids(df)
 
     stats = compute_per_edition_stats(
         df, ed_authors, sorted_editions, work_max_by, author_by, args.window
