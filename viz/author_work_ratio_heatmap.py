@@ -30,36 +30,36 @@ from dotenv import dotenv_values
 
 
 ENV_FILE = Path(__file__).parent.parent / ".env"
-QUERIES  = Path(__file__).parent.parent / "queries"
+QUERIES = Path(__file__).parent.parent / "queries"
 OUT_FILE = Path(__file__).parent / "author_work_ratio_heatmap.png"
 
 SERIES_ID_ABBREV: dict[str, str] = {
-    "3":  "NAAAL",
-    "8":  "Afro-Am. Writing",
+    "3": "NAAAL",
+    "8": "Afro-Am. Writing",
     "12": "AAL Anthology",
     "17": "Wiley Blackwell AAL",
 }
 
 STANDALONE_SHORT: dict[str, str] = {
-    "67":  "Amer. Negro Lit.",
-    "66":  "Readings fr. Negro Authors",
-    "62":  "Negro Caravan",
-    "63":  "Amer. Lit. by Negro Authors",
-    "56":  "Intro to Black Lit.",
-    "43":  "Black Voices",
-    "42":  "Cavalcade",
-    "46":  "Black Insights",
-    "48":  "Black Lit. in America",
-    "47":  "Black Writers of America",
+    "67": "Amer. Negro Lit.",
+    "66": "Readings fr. Negro Authors",
+    "62": "Negro Caravan",
+    "63": "Amer. Lit. by Negro Authors",
+    "56": "Intro to Black Lit.",
+    "43": "Black Voices",
+    "42": "Cavalcade",
+    "46": "Black Insights",
+    "48": "Black Lit. in America",
+    "47": "Black Writers of America",
     "109": "Black Culture",
-    "64":  "Cornerstones",
-    "44":  "AAL Brief Intro",
-    "49":  "Call & Response",
-    "39":  "Prentice Hall AAL",
-    "86":  "Afr. Am. Lit.",
-    "50":  "Blackamerican Lit.",
-    "40":  "New Cavalcade v.1",
-    "41":  "New Cavalcade v.2",
+    "64": "Cornerstones",
+    "44": "AAL Brief Intro",
+    "49": "Call & Response",
+    "39": "Prentice Hall AAL",
+    "86": "Afr. Am. Lit.",
+    "50": "Blackamerican Lit.",
+    "40": "New Cavalcade v.1",
+    "41": "New Cavalcade v.2",
 }
 
 
@@ -70,10 +70,10 @@ def parse_db_params(env_file: Path) -> dict[str, str]:
     env = dotenv_values(env_file)
     raw = env["DATABASE_URL"]
     return {
-        "host":     re.search(r"-h\s+(\S+)", raw).group(1),
-        "user":     re.search(r"-U\s+(\S+)", raw).group(1),
+        "host": re.search(r"-h\s+(\S+)", raw).group(1),
+        "user": re.search(r"-U\s+(\S+)", raw).group(1),
         "password": re.search(r"PGPASSWORD=(\S+)", raw).group(1),
-        "dbname":   raw.split()[-1],
+        "dbname": raw.split()[-1],
     }
 
 
@@ -111,7 +111,10 @@ def load_and_prepare_db(
         for key, grp in df.groupby("edition_key")
     }
     year_map: dict[str, int] = (
-        df.groupby("edition_key")["anthology_publication_year"].min().astype(int).to_dict()
+        df.groupby("edition_key")["anthology_publication_year"]
+        .min()
+        .astype(int)
+        .to_dict()
     )
     return work_sets, author_sets, year_map
 
@@ -157,10 +160,34 @@ def ratio_matrix(
         for j, kj in enumerate(keys):
             if cross_series_only and ki != kj and _same_series(ki, kj):
                 continue
-            works_common   = len(work_sets.get(ki, set())   & work_sets.get(kj, set()))
-            authors_common = len(author_sets.get(ki, set()) & author_sets.get(kj, set()))
+            works_common = len(work_sets.get(ki, set()) & work_sets.get(kj, set()))
+            authors_common = len(
+                author_sets.get(ki, set()) & author_sets.get(kj, set())
+            )
             if works_common > 0:
                 mat[i, j] = authors_common / works_common
+    return mat
+
+
+# ── Jaccard matrix ────────────────────────────────────────────────────────────
+
+
+def jaccard_matrix(
+    keys: list[str],
+    sets: dict[str, set],
+    cross_series_only: bool = True,
+) -> np.ndarray:
+    """Cell (i, j) = |sets_i ∩ sets_j| / |sets_i ∪ sets_j|. NaN when union = 0 or filtered."""
+    n = len(keys)
+    mat = np.full((n, n), np.nan)
+    for i, ki in enumerate(keys):
+        for j, kj in enumerate(keys):
+            if cross_series_only and ki != kj and _same_series(ki, kj):
+                continue
+            inter = len(sets.get(ki, set()) & sets.get(kj, set()))
+            union = len(sets.get(ki, set()) | sets.get(kj, set()))
+            if union > 0:
+                mat[i, j] = inter / union
     return mat
 
 
@@ -216,6 +243,45 @@ def plot(
     print(f"Saved → {out}")
 
 
+def plot_jaccard(
+    mat: np.ndarray,
+    labels: list[str],
+    out: Path,
+    cmap: str = "viridis",
+    title: str = "",
+) -> None:
+    n = len(labels)
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_bad("lightgrey")
+    masked = np.ma.masked_invalid(mat)
+
+    fig, ax = plt.subplots(figsize=(18, 16))
+    im = ax.imshow(masked, cmap=cmap_obj, vmin=0.0, vmax=1.0, aspect="auto")
+    cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    cbar.set_label("Jaccard similarity", fontsize=10)
+
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels(labels, rotation=90, ha="center", fontsize=7.5)
+    ax.set_yticklabels(labels, fontsize=7.5)
+
+    for i in range(n):
+        for j in range(n):
+            v = mat[i, j]
+            if not np.isnan(v):
+                ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=5)
+
+    ax.set_title(
+        title
+        + "\n(grey = no shared items or within-series pair; diagonal = edition vs. itself = 1.0)",
+        fontsize=11,
+        pad=14,
+    )
+    fig.tight_layout()
+    fig.savefig(out, dpi=300, bbox_inches="tight")
+    print(f"Saved → {out}")
+
+
 # ── Argparse ──────────────────────────────────────────────────────────────────
 
 
@@ -252,7 +318,9 @@ def main() -> None:
 
     OUT_FILE.parent.mkdir(exist_ok=True)
 
-    mat = ratio_matrix(all_keys, work_sets, author_sets, cross_series_only=cross_series_only)
+    mat = ratio_matrix(
+        all_keys, work_sets, author_sets, cross_series_only=cross_series_only
+    )
 
     # ── Summary statistic: % of distinct pairings where authors > works ───────
     n = len(all_keys)
@@ -273,8 +341,58 @@ def main() -> None:
         f"more authors in common than works in common."
     )
 
+    # ── Jaccard similarity ────────────────────────────────────────────────────
+    author_jacc = jaccard_matrix(all_keys, author_sets, cross_series_only)
+    work_jacc = jaccard_matrix(all_keys, work_sets, cross_series_only)
+
+    # Collect upper-triangle values for summary
+    aj_vals, wj_vals, pairs_author_jacc_gt_work_jacc = [], [], 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if cross_series_only and _same_series(all_keys[i], all_keys[j]):
+                continue
+            aj = author_jacc[i, j]
+            wj = work_jacc[i, j]
+            if not np.isnan(aj):
+                aj_vals.append(aj)
+            if not np.isnan(wj):
+                wj_vals.append(wj)
+            if not np.isnan(aj) and not np.isnan(wj) and aj > wj:
+                pairs_author_jacc_gt_work_jacc += 1
+
+    aj_arr = np.array(aj_vals)
+    wj_arr = np.array(wj_vals)
+    n_both = min(len(aj_vals), len(wj_vals))
+    pct_aj_gt_wj = (
+        100.0 * pairs_author_jacc_gt_work_jacc / n_both if n_both else float("nan")
+    )
+    print(
+        f"Author Jaccard: mean={np.mean(aj_arr):.3f}, median={np.median(aj_arr):.3f} "
+        f"across {len(aj_arr)} pairs."
+    )
+    print(
+        f"Work Jaccard:   mean={np.mean(wj_arr):.3f}, median={np.median(wj_arr):.3f} "
+        f"across {len(wj_arr)} pairs."
+    )
+    print(
+        f"{pairs_author_jacc_gt_work_jacc} of {n_both} pairings ({pct_aj_gt_wj:.1f}%) have "
+        f"higher author Jaccard than work Jaccard."
+    )
+
     plot(mat, labels, OUT_FILE)
     plot(mat, labels, OUT_FILE.with_stem(OUT_FILE.stem + "_bw"), cmap="bwr")
+    plot_jaccard(
+        author_jacc,
+        labels,
+        OUT_FILE.with_stem(OUT_FILE.stem + "_jaccard_authors"),
+        title="Jaccard similarity — authors shared between anthology editions",
+    )
+    plot_jaccard(
+        work_jacc,
+        labels,
+        OUT_FILE.with_stem(OUT_FILE.stem + "_jaccard_works"),
+        title="Jaccard similarity — works shared between anthology editions",
+    )
 
 
 if __name__ == "__main__":
