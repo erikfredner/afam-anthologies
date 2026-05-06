@@ -13,17 +13,19 @@ Python analysis scripts for studying African American literary anthologies — e
 uv sync
 
 # Run an analysis script
-uv run python analysis/simulate_naaal2025_selection.py
+uv run python analysis/logistic_reselection.py --year 2025 --mode both
 uv run python analysis/reselection_vs_chance.py --only-root-works
-uv run python analysis/logistic_predictability_naaal2025.py --save-csv
+uv run python analysis/new_selection_reselection_probability.py --save-csv
 
 # Run a viz script
 uv run python viz/anthology_overlap_heatmap.py
 uv run python viz/anthology_network.py --csv data/myfile.csv --out network.png
-uv run python viz/reselection_probability.py data/myfile.csv
 
-# Run tests
+# Run all tests
 uv run pytest
+
+# Run a single test file
+uv run pytest tests/test_gender_reselection.py
 
 # Lint
 uv run ruff check .
@@ -38,11 +40,13 @@ Scripts are standalone — each is a self-contained analysis with a `main()` and
 
 | Script | Description |
 |--------|-------------|
+| `logistic_reselection.py` | Unified logistic regression predicting author or work reselection (DB-backed; replaces the old per-edition logistic scripts) |
+| `new_selection_reselection_probability.py` | Reselection probability for debut authors/works, with Wilson CI by decade (DB-backed) |
+| `authors_in_half_or_more_afam_eds.py` | Authors appearing in ≥50% of AFAM editions (DB-backed) |
+| `works_in_half_or_more_afam_eds.py` | Works appearing in ≥50% of AFAM editions (DB-backed) |
+| `half_or_more_sentences.py` | Summary sentences for authors/works in ≥50% of editions (DB-backed) |
 | `overlap_naaal_1996.py` | Work and author overlap between NAAAL 1996 and pre-1996 anthologies |
 | `freq_bucket_predictability.py` | Recall analysis by prior appearance frequency buckets |
-| `logistic_predictability_naaal1996.py` | Logistic regression predicting NAAAL 1996 inclusion |
-| `logistic_predictability_naaal2025.py` | Logistic regression predicting NAAAL 2025 author inclusion |
-| `logistic_predictability_naaal2025_works.py` | Logistic regression predicting NAAAL 2025 work inclusion |
 | `simulate_naaal1996_selection.py` | Logit + Bayesian models trained on pre-1996 data to predict NAAAL 1996 |
 | `simulate_naaal2025_selection.py` | Logit + Bayesian models trained on pre-2025 data to predict NAAAL 2025 |
 | `simulate_author_work_overlap.py` | Monte Carlo simulation of author vs. work pairwise overlap |
@@ -54,21 +58,38 @@ Scripts are standalone — each is a self-contained analysis with a `main()` and
 | `authors_without_frequent_works.py` | Authors who appear often but whose individual works are rarely reselected |
 | `women_author_gaps.py` | Gender gap analysis using author gender data |
 
-**`viz/`** — scripts that produce charts, network graphs, and formatted tables. Most hardcode a data path at the top of the file; some require a `--csv` argument. PNG outputs are gitignored and written to `viz/` or the current directory.
+**`viz/`** — scripts that produce charts, network graphs, and formatted tables. PNG outputs are gitignored and written to `viz/` or the current directory. Some scripts require a `--csv` argument; most use hardcoded DB or CSV paths.
 
 **`tests/`** — pytest unit tests for analysis functions. Tests import internal `compute()` and helper functions directly from `analysis/` scripts via `sys.path.insert`, so they cover business logic without invoking `main()`.
 
-## Data
+**`queries/`** — SQL files read and executed by DB-backed scripts against the PostgreSQL database.
 
-CSV files live in `data/` (gitignored). Scripts hardcode data paths as module-level `DATA_FILE` constants (overridable via `--data-file` in some scripts). Primary datasets:
+## Data access: two patterns
+
+**CSV-backed scripts** (older): hardcode a `DATA_FILE` constant pointing to `data/*.csv`. Overridable via `--data-file` in some scripts.
+
+**DB-backed scripts** (newer): connect to PostgreSQL via `psycopg`, reading connection params from `.env`. SQL is stored in `queries/*.sql` and loaded at runtime. These scripts do not use local CSV files as input.
+
+### Database setup
+
+`.env` must contain a `DATABASE_URL` in this format:
+```
+DATABASE_URL=PGPASSWORD=<password> psql -h <host> -U <user> <dbname>
+```
+
+The DB helper in each script parses this string to extract `host`, `user`, `password`, and `dbname`.
+
+## Data (CSV)
+
+CSV files live in `data/` (gitignored). Primary source datasets:
 
 | File | Used by |
 |------|---------|
-| `2026-03-13 works per afam anthology.csv` | Most 2026-era analysis scripts |
-| `2026-03-13 work ids in afam anthologies.csv` | `logistic_predictability_naaal2025_works.py` |
-| `2026-03-13 author ids in afam anthologies.csv` | `author_first_selection_success.py`, `logistic_predictability_naaal2025.py` |
+| `2026-03-13 works per afam anthology.csv` | Most 2026-era CSV-backed analysis scripts |
+| `2026-03-13 work ids in afam anthologies.csv` | Some logistic/work scripts |
+| `2026-03-13 author ids in afam anthologies.csv` | `author_first_selection_success.py` |
 | `2026-03-17 af am anthology authors with genders.csv` | `women_author_gaps.py` |
-| `202505121539 authors works.csv` | `freq_bucket_predictability.py`, `logistic_predictability_naaal1996.py`, `overlap_naaal_1996.py` |
+| `202505121539 authors works.csv` | `freq_bucket_predictability.py`, `overlap_naaal_1996.py` |
 
 Key columns in `202505` data: `work_id`, `work_author`, `author_id`, `anthology_id`, `anthology_series`, `anthology_edition`, `anthology_year`, `series_id`, `parent_work_id` / `parent_work_title`, `work_form`.
 
@@ -80,6 +101,7 @@ Key columns in `2026-03-13` data: `series_id`, `anthology_edition`, `anthology_v
 
 ## Flags common across scripts
 
-- `--only-root-works` — restrict analysis to works without a parent work (`parent_work_id` or `parent_work_title` is empty), i.e. exclude excerpts/selections
+- `--only-root-works` / `--include-excerpts` — include or exclude works with a parent (`parent_work_id` / `parent_work_title` non-empty); root-only is the default in DB-backed scripts
 - `--save-csv` — write output tables to `data/` instead of printing to stdout
-- `--data-file` — override the default `DATA_FILE` path (supported in newer logistic scripts)
+- `--data-file` — override the default `DATA_FILE` path (supported in some CSV-backed scripts)
+- `--year` / `--mode` — in `logistic_reselection.py`: target edition year and whether to model `authors`, `works`, or `both`

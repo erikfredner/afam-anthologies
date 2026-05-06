@@ -17,10 +17,18 @@ Per-edition eligible pools use each edition's own birth-year cutoff
 (max_author_birth_year + window).  Pairwise comparisons apply the stricter
 min(cutoff_i, cutoff_j) filter — matching anthology_overlap_heatmap.py.
 
+Produces a figure (viz/author_work_overlap_simulation.png) overlaying real
+pairs on the simulated (shared_authors, shared_works) distribution.
+
+By default only cross-series pairs are included (matching anthology_overlap_heatmap.py
+and author_work_shared_scatter.py). Use --include-within-series to include
+within-series pairs (e.g. NAAAL ed.1 vs. NAAAL ed.2).
+
 Usage:
     uv run python analysis/simulate_author_work_overlap.py
     uv run python analysis/simulate_author_work_overlap.py --only-root-works
     uv run python analysis/simulate_author_work_overlap.py --n 1000 --seed 0
+    uv run python analysis/simulate_author_work_overlap.py --include-within-series
 """
 
 from __future__ import annotations
@@ -31,53 +39,43 @@ import re
 from itertools import combinations
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import psycopg
+from dotenv import dotenv_values
 
 
-DATA_FILE = (
-    Path(__file__).parent.parent / "data" / "2026-03-13 works per afam anthology.csv"
-)
+ENV_FILE = Path(__file__).parent.parent / ".env"
+QUERIES  = Path(__file__).parent.parent / "queries"
+OUT_DIR  = Path(__file__).parent.parent / "viz"
+OUT_FILE = OUT_DIR / "author_work_overlap_simulation.png"
+
 BIRTH_YEAR_WINDOW = 5
 DEFAULT_N = 10_000
 DEFAULT_SEED = 42
 
 
-# ── Edition-key logic ─────────────────────────────────────────────────────────
+# ── DB helpers ────────────────────────────────────────────────────────────────
 
 
-def _strip_volume(title: str) -> str:
-    return re.sub(r",?\s+[Vv]ol\.?\s+\d+\s*$", "", title).strip()
+def parse_db_params(env_file: Path) -> dict[str, str]:
+    env = dotenv_values(env_file)
+    raw = env["DATABASE_URL"]
+    return {
+        "host":     re.search(r"-h\s+(\S+)", raw).group(1),
+        "user":     re.search(r"-U\s+(\S+)", raw).group(1),
+        "password": re.search(r"PGPASSWORD=(\S+)", raw).group(1),
+        "dbname":   raw.split()[-1],
+    }
 
 
-def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
-    meta_rows: list[dict] = []
-    for _, r in (
-        df[
-            [
-                "anthology_id",
-                "anthology_title",
-                "series_id",
-                "anthology_edition",
-                "anthology_volume",
-            ]
-        ]
-        .drop_duplicates()
-        .iterrows()
-    ):
-        series_id = r["series_id"].strip()
-        edition = r["anthology_edition"].strip()
-        volume = r["anthology_volume"].strip()
-        title = r["anthology_title"].strip()
-        aid = r["anthology_id"]
-        if series_id:
-            key = f"{series_id}|{edition}"
-        elif volume:
-            key = f"{_strip_volume(title)}|{edition}"
-        else:
-            key = aid
-        meta_rows.append({"anthology_id": aid, "edition_key": key})
-    return df.merge(pd.DataFrame(meta_rows), on="anthology_id")
+def query_db(params: dict[str, str], sql_file: Path) -> pd.DataFrame:
+    sql = sql_file.read_text()
+    with psycopg.connect(**params) as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        cols = [desc.name for desc in cur.description]
+        return pd.DataFrame(cur.fetchall(), columns=cols)
 
 
 # ── Birth-year precomputation ─────────────────────────────────────────────────
@@ -86,55 +84,27 @@ def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
 def precompute_birth_years(
     df: pd.DataFrame,
 ) -> tuple[dict[str, int], dict[str, int]]:
-    """Return (work_max_birth_year, author_birth_year).
-
-    Mirrors reselection_vs_chance.py logic exactly.
-    """
-    work_max_by: dict[str, int] = {}
-    author_by: dict[str, int] = {}
-
-    for _, row in df.iterrows():
-        wid = row["work_id"].strip()
-        aids_raw = row["author_ids"].strip()
-        bys_raw = row["author_birth_years"].strip()
-        if not aids_raw or not bys_raw:
-            continue
-        aids = [a.strip() for a in aids_raw.split(",") if a.strip()]
-        bys_strs = [b.strip() for b in bys_raw.split(",") if b.strip()]
-        years: list[int] = []
-        for by_str in bys_strs:
-            try:
-                years.append(int(by_str))
-            except ValueError:
-                pass
-        for aid, yr in zip(aids, years):
-            if aid not in author_by:
-                author_by[aid] = yr
-        if wid and years:
-            existing = work_max_by.get(wid)
-            new_max = max(years)
-            if existing is None or new_max > existing:
-                work_max_by[wid] = new_max
-
+    """Return (work_max_birth_year, author_birth_year) dicts with str keys."""
+    work_max_by: dict[str, int] = {
+        str(k): v
+        for k, v in df.groupby("work_id")["author_birth_year"]
+        .max()
+        .dropna()
+        .astype(int)
+        .items()
+    }
+    author_by: dict[str, int] = {
+        str(k): v
+        for k, v in (
+            df[["author_id", "author_birth_year"]]
+            .dropna(subset=["author_id", "author_birth_year"])
+            .drop_duplicates("author_id")
+            .set_index("author_id")["author_birth_year"]
+            .astype(int)
+            .items()
+        )
+    }
     return work_max_by, author_by
-
-
-# ── Author expansion ──────────────────────────────────────────────────────────
-
-
-def expand_author_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Expand multi-author rows to one row per (edition_key, author_id)."""
-    records: list[dict] = []
-    for _, row in df[df["author_ids"] != ""].iterrows():
-        ids = [i.strip() for i in row["author_ids"].split(",") if i.strip()]
-        for aid in ids:
-            records.append(
-                {
-                    "author_id": aid,
-                    "edition_key": row["edition_key"],
-                }
-            )
-    return pd.DataFrame(records)
 
 
 # ── Simulation pool construction ──────────────────────────────────────────────
@@ -143,12 +113,8 @@ def expand_author_rows(df: pd.DataFrame) -> pd.DataFrame:
 def build_author_to_all_works(df: pd.DataFrame) -> dict[str, set[str]]:
     """Map each author_id → all work_ids they authored anywhere in the dataset."""
     result: dict[str, set[str]] = {}
-    for _, row in df[df["author_ids"] != ""].iterrows():
-        wid = row["work_id"].strip()
-        for aid in row["author_ids"].split(","):
-            aid = aid.strip()
-            if aid:
-                result.setdefault(aid, set()).add(wid)
+    for aid, grp in df[df["author_id"].notna()].groupby("author_id"):
+        result[str(aid)] = set(grp["work_id"].astype(str))
     return result
 
 
@@ -160,11 +126,7 @@ def build_elig_by_author(
     work_max_by: dict[str, int],
 ) -> dict[str, list[tuple[str, list[str]]]]:
     """Return {ek: list of (author_id, eligible_work_ids)} — only authors with
-    at least one eligible work in this edition's pool.
-
-    'Eligible' means both the author and the work fall within the edition's
-    birth-year cutoff.
-    """
+    at least one eligible work in this edition's pool."""
     result: dict[str, list[tuple[str, list[str]]]] = {}
     for ek in sorted_keys:
         cutoff = edition_cutoff[ek]
@@ -185,24 +147,18 @@ def build_real_dist(
 ) -> dict[str, list[int]]:
     """Return {ek: sorted-descending per-author work counts} for the real edition.
 
-    Only counts authored works (authorless works tracked separately).
-    Multi-author works contribute +1 to each co-author's count.
+    Only counts authored works; multi-author works contribute +1 to each co-author.
     """
     result: dict[str, list[int]] = {}
     for ek, works_in_ed in edition_works.items():
-        ed_rows = df[df["edition_key"] == ek]
+        ed_rows = df[(df["edition_key"] == ek) & df["author_id"].notna()]
         author_works: dict[str, set[str]] = {}
         for _, row in ed_rows.iterrows():
-            wid = row["work_id"].strip()
+            wid = str(row["work_id"])
             if wid not in works_in_ed:
                 continue
-            aids_raw = row["author_ids"].strip()
-            if not aids_raw:
-                continue
-            for aid in aids_raw.split(","):
-                aid = aid.strip()
-                if aid:
-                    author_works.setdefault(aid, set()).add(wid)
+            aid = str(row["author_id"])
+            author_works.setdefault(aid, set()).add(wid)
         result[ek] = sorted((len(v) for v in author_works.values()), reverse=True)
     return result
 
@@ -223,37 +179,36 @@ def build_edition_max_by(
     return result
 
 
-# ── Pairwise classification ───────────────────────────────────────────────────
+# ── Pairwise data collection ──────────────────────────────────────────────────
 
 
-def classify_pairs(
+def _same_series(ki: str, kj: str) -> bool:
+    if "|" not in ki or "|" not in kj:
+        return False
+    return ki.rsplit("|", 1)[0] == kj.rsplit("|", 1)[0]
+
+
+def collect_pairs(
     work_sets: dict[str, set[str]],
     author_sets: dict[str, set[str]],
     sorted_keys: list[str],
     pair_cutoffs: dict[tuple[str, str], int],
     work_max_by: dict[str, int],
     author_by: dict[str, int],
-) -> tuple[int, int, int]:
-    """Return (n_authors_gt, n_ties, total_pairs).
-
-    For each pair (ki, kj), applies pairwise birth-year filtering before
-    comparing shared counts.
-    """
-    n_gt = n_tie = 0
+    cross_series_only: bool = True,
+) -> list[tuple[int, int]]:
+    """Return (shared_authors, shared_works) for every pair with birth-year filtering."""
+    results = []
     for ki, kj in combinations(sorted_keys, 2):
+        if cross_series_only and _same_series(ki, kj):
+            continue
         pc = pair_cutoffs[(ki, kj)]
         wi = {w for w in work_sets[ki] if work_max_by.get(w, pc) <= pc}
         wj = {w for w in work_sets[kj] if work_max_by.get(w, pc) <= pc}
         ai = {a for a in author_sets[ki] if author_by.get(a, pc) <= pc}
         aj = {a for a in author_sets[kj] if author_by.get(a, pc) <= pc}
-        sw = len(wi & wj)
-        sa = len(ai & aj)
-        if sa > sw:
-            n_gt += 1
-        elif sa == sw:
-            n_tie += 1
-    total = len(sorted_keys) * (len(sorted_keys) - 1) // 2
-    return n_gt, n_tie, total
+        results.append((len(ai & aj), len(wi & wj)))
+    return results
 
 
 # ── Formatting helpers ────────────────────────────────────────────────────────
@@ -271,6 +226,68 @@ def fmt_p(p: float) -> str:
     return f"{p:.4f}"
 
 
+# ── Figure ────────────────────────────────────────────────────────────────────
+
+
+def plot_figure(
+    real_pairs: list[tuple[int, int]],
+    sim_counter: dict[tuple[int, int], int],
+    out: Path,
+) -> None:
+    sim_coords = list(sim_counter.keys())
+    sim_counts = [sim_counter[k] for k in sim_coords]
+    max_count = max(sim_counts)
+    sim_x = [k[0] for k in sim_coords]
+    sim_y = [k[1] for k in sim_coords]
+    norm_size = [200 * c / max_count for c in sim_counts]
+
+    real_x = [p[0] for p in real_pairs]
+    real_y = [p[1] for p in real_pairs]
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+
+    ax.scatter(
+        sim_x, sim_y, s=norm_size,
+        color="steelblue", alpha=0.5, linewidths=0,
+        label="Simulated (bubble area ∝ frequency)",
+    )
+    ax.scatter(
+        real_x, real_y, s=50,
+        color="firebrick", zorder=4, linewidths=0,
+        label="Real pairs",
+    )
+
+    lim = max(max(sim_x + real_x, default=1), max(sim_y + real_y, default=1)) * 1.05
+    ax.plot([0, lim], [0, lim], color="grey", linestyle="--", linewidth=1, zorder=0)
+    ax.set_xlim(0, lim)
+    ax.set_ylim(0, lim)
+
+    ax.set_xlabel("Shared authors", fontsize=13)
+    ax.set_ylabel("Shared works", fontsize=13)
+    ax.set_title(
+        "Shared authors vs. shared works: real pairs vs. simulation\n"
+        "(dashed line = equal shared authors and works)",
+        fontsize=11,
+    )
+    ax.text(
+        0.72, 0.22, "More shared\nauthors",
+        transform=ax.transAxes, ha="center", va="center",
+        fontsize=10, color="grey", style="italic",
+    )
+    ax.text(
+        0.22, 0.72, "More shared\nworks",
+        transform=ax.transAxes, ha="center", va="center",
+        fontsize=10, color="grey", style="italic",
+    )
+    ax.legend(loc="upper left", fontsize=10)
+
+    out.parent.mkdir(exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Figure saved → {out}")
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 
@@ -278,56 +295,62 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--only-root-works", action="store_true")
     parser.add_argument(
-        "--n",
-        type=int,
-        default=DEFAULT_N,
-        metavar="INT",
+        "--include-within-series",
+        action="store_true",
+        help="Include within-series pairs (e.g. NAAAL ed.1 vs. ed.2). Excluded by default.",
+    )
+    parser.add_argument(
+        "--n", type=int, default=DEFAULT_N, metavar="INT",
         help=f"Simulation trials (default: {DEFAULT_N})",
     )
     parser.add_argument(
-        "--window",
-        type=int,
-        default=BIRTH_YEAR_WINDOW,
-        metavar="INT",
+        "--window", type=int, default=BIRTH_YEAR_WINDOW, metavar="INT",
         help=f"Birth-year window (default: {BIRTH_YEAR_WINDOW})",
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=DEFAULT_SEED,
-        metavar="INT",
+        "--seed", type=int, default=DEFAULT_SEED, metavar="INT",
         help=f"Random seed (default: {DEFAULT_SEED})",
+    )
+    parser.add_argument(
+        "--out", type=Path, default=OUT_FILE, metavar="PATH",
+        help=f"Output figure path (default: {OUT_FILE})",
     )
     args = parser.parse_args()
 
-    # ── Load ──────────────────────────────────────────────────────────────────
-    df = pd.read_csv(DATA_FILE, dtype=str, na_filter=False)
+    # ── Load from DB ──────────────────────────────────────────────────────────
+    params = parse_db_params(ENV_FILE)
+    df = query_db(params, QUERIES / "work-selection-divergence.sql")
+
+    df["edition_key"] = df.apply(
+        lambda r: (
+            f"{int(r['series_id'])}|{r['edition_number']}"
+            if pd.notna(r["series_id"])
+            else str(r["edition_id"])
+        ),
+        axis=1,
+    )
     df["anthology_publication_year"] = df["anthology_publication_year"].astype(int)
-    df = assign_edition_key(df)
+
     if args.only_root_works:
-        df = df[
-            (df["parent_work_id"].str.strip() == "")
-            & (df["parent_work_title"].str.strip() == "")
-        ].copy()
+        df = df[df["parent_id"].isna()].copy()
 
     # ── Birth years ───────────────────────────────────────────────────────────
     work_max_by, author_by = precompute_birth_years(df)
     global_max_by = max(work_max_by.values()) if work_max_by else 1970
 
     # ── Per-edition sets ──────────────────────────────────────────────────────
-    edition_works: dict[str, set[str]] = (
-        df.groupby("edition_key")["work_id"].apply(set).to_dict()
-    )
-    expanded = expand_author_rows(df)
-    edition_authors: dict[str, set[str]] = (
-        expanded.groupby("edition_key")["author_id"].apply(set).to_dict()
-    )
+    edition_works: dict[str, set[str]] = {
+        ek: set(grp["work_id"].astype(str))
+        for ek, grp in df.groupby("edition_key")
+    }
+    edition_authors: dict[str, set[str]] = {
+        ek: set(grp["author_id"].dropna().astype(str))
+        for ek, grp in df.groupby("edition_key")
+    }
 
     sorted_keys = sorted(
         edition_works.keys(),
-        key=lambda k: df.loc[
-            df["edition_key"] == k, "anthology_publication_year"
-        ].min(),
+        key=lambda k: df.loc[df["edition_key"] == k, "anthology_publication_year"].min(),
     )
 
     # ── Per-edition cutoffs ───────────────────────────────────────────────────
@@ -341,52 +364,45 @@ def main() -> None:
     )
     real_dist = build_real_dist(df, edition_works)
 
-    # Authorless works: sampled independently (no author to entail)
-    authored_wids: set[str] = set(
-        w for wids in author_to_all_works.values() for w in wids
+    # Authorless works sampled independently (no author to entail)
+    authored_wids: set[str] = {w for wids in author_to_all_works.values() for w in wids}
+    authorless_wids = (
+        df[df["author_id"].isna()]
+        .drop_duplicates("work_id")["work_id"]
+        .astype(str)
     )
-    all_authorless_wids = sorted(
-        {
-            row["work_id"].strip()
-            for _, row in df[df["author_ids"] == ""].iterrows()
-            if row["work_id"].strip() not in authored_wids
-        }
-    )
+    all_authorless_wids = sorted(w for w in authorless_wids if w not in authored_wids)
     authorless_set = set(all_authorless_wids)
+
     eligible_authorless: dict[str, list[str]] = {
         ek: [
-            w
-            for w in all_authorless_wids
+            w for w in all_authorless_wids
             if work_max_by.get(w, edition_cutoff[ek]) <= edition_cutoff[ek]
         ]
         for ek in sorted_keys
     }
     n_authorless: dict[str, int] = {}
     for ek in sorted_keys:
-        ed_rows = df[df["edition_key"] == ek]
+        ed_rows = df[(df["edition_key"] == ek) & df["author_id"].isna()]
         n_authorless[ek] = sum(
-            1
-            for _, row in ed_rows.iterrows()
-            if not row["author_ids"].strip()
-            and row["work_id"].strip() in authorless_set
+            1 for wid in ed_rows["work_id"].astype(str) if wid in authorless_set
         )
 
     # ── Precompute pairwise cutoffs ───────────────────────────────────────────
     pair_cutoffs: dict[tuple[str, str], int] = {}
     for ki, kj in combinations(sorted_keys, 2):
-        pair_cutoffs[(ki, kj)] = (
-            min(edition_max_by[ki], edition_max_by[kj]) + args.window
-        )
+        pair_cutoffs[(ki, kj)] = min(edition_max_by[ki], edition_max_by[kj]) + args.window
+
+    cross_series_only = not args.include_within_series
 
     # ── Real observation ──────────────────────────────────────────────────────
-    obs_gt, obs_tie, total_pairs = classify_pairs(
-        edition_works,
-        edition_authors,
-        sorted_keys,
-        pair_cutoffs,
-        work_max_by,
-        author_by,
+    real_pairs = collect_pairs(
+        edition_works, edition_authors, sorted_keys, pair_cutoffs, work_max_by, author_by,
+        cross_series_only=cross_series_only,
     )
+    obs_gt   = sum(1 for sa, sw in real_pairs if sa > sw)
+    obs_tie  = sum(1 for sa, sw in real_pairs if sa == sw)
+    total_pairs = len(real_pairs)
     obs_rate = obs_gt / total_pairs
 
     print(f"===== REAL DATA (window={args.window}) =====")
@@ -406,6 +422,7 @@ def main() -> None:
     print(f"Running {args.n:,} simulations (seed={args.seed})...", end="", flush=True)
     rng = random.Random(args.seed)
     sim_rates: list[float] = []
+    sim_counter: dict[tuple[int, int], int] = {}
 
     for trial in range(args.n):
         if (trial + 1) % 1000 == 0:
@@ -429,37 +446,38 @@ def main() -> None:
                 selected_works.update(rng.sample(wids, min(c, len(wids))))
                 selected_authors.add(aid)
 
-            # Authorless works sampled independently
             n_al = n_authorless[ek]
             if n_al > 0 and eligible_authorless[ek]:
                 selected_works.update(
-                    rng.sample(
-                        eligible_authorless[ek], min(n_al, len(eligible_authorless[ek]))
-                    )
+                    rng.sample(eligible_authorless[ek], min(n_al, len(eligible_authorless[ek])))
                 )
 
             sim_w[ek] = selected_works
             sim_a[ek] = selected_authors
 
-        n_gt, _, _ = classify_pairs(
-            sim_w, sim_a, sorted_keys, pair_cutoffs, work_max_by, author_by
+        trial_pairs = collect_pairs(
+            sim_w, sim_a, sorted_keys, pair_cutoffs, work_max_by, author_by,
+            cross_series_only=cross_series_only,
         )
+        n_gt = sum(1 for sa, sw in trial_pairs if sa > sw)
         sim_rates.append(n_gt / total_pairs)
+        for pair in trial_pairs:
+            sim_counter[pair] = sim_counter.get(pair, 0) + 1
 
     print(" done.")
     print()
 
     # ── Report ────────────────────────────────────────────────────────────────
-    arr = np.array(sim_rates)
-    mean = float(arr.mean())
-    std = float(arr.std())
+    arr    = np.array(sim_rates)
+    mean   = float(arr.mean())
+    std    = float(arr.std())
     median = float(np.median(arr))
-    p95 = float(np.percentile(arr, 95))
-    p99 = float(np.percentile(arr, 99))
-    p999 = float(np.percentile(arr, 99.9))
+    p95    = float(np.percentile(arr, 95))
+    p99    = float(np.percentile(arr, 99))
+    p999   = float(np.percentile(arr, 99.9))
     sim_max = float(arr.max())
 
-    z = (obs_rate - mean) / std if std > 0 else float("inf")
+    z     = (obs_rate - mean) / std if std > 0 else float("inf")
     emp_p = float((arr >= obs_rate).mean())
 
     print(
@@ -478,12 +496,18 @@ def main() -> None:
     n_exceeded = int((arr >= obs_rate).sum())
     if n_exceeded == 0:
         print(
-            f"  Empirical p:       < {1 / args.n:.4f}  (0 / {args.n:,} simulations reached {fmt_pct(obs_rate)})"
+            f"  Empirical p:       < {1 / args.n:.4f}  "
+            f"(0 / {args.n:,} simulations reached {fmt_pct(obs_rate)})"
         )
     else:
         print(
-            f"  Empirical p:       {fmt_p(emp_p)}  ({n_exceeded} / {args.n:,} simulations reached {fmt_pct(obs_rate)})"
+            f"  Empirical p:       {fmt_p(emp_p)}  "
+            f"({n_exceeded} / {args.n:,} simulations reached {fmt_pct(obs_rate)})"
         )
+    print()
+
+    # ── Figure ────────────────────────────────────────────────────────────────
+    plot_figure(real_pairs, sim_counter, args.out)
 
 
 if __name__ == "__main__":
