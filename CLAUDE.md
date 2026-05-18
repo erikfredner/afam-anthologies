@@ -9,6 +9,7 @@ Python analysis scripts for studying African American literary anthologies — e
 ## Commands
 
 ```bash
+# Requires Python 3.13+ (3.14 in .python-version)
 # Install dependencies
 uv sync
 
@@ -58,11 +59,39 @@ Scripts are standalone — each is a self-contained analysis with a `main()` and
 | `authors_without_frequent_works.py` | Authors who appear often but whose individual works are rarely reselected |
 | `women_author_gaps.py` | Gender gap analysis using author gender data |
 
-**`viz/`** — scripts that produce charts, network graphs, and formatted tables. PNG outputs are gitignored and written to `viz/` or the current directory. Some scripts require a `--csv` argument; most use hardcoded DB or CSV paths.
+**`viz/`** — 34 scripts producing charts, network graphs, and formatted tables. PNG outputs are gitignored and written to `viz/` or the current directory. Categories:
+- **Heatmaps**: `anthology_overlap_heatmap.py`, `author_work_ratio_heatmap.py` — overlap matrices between editions
+- **Networks**: `anthology_network.py`, `work_network.py` — bipartite co-occurrence graphs (require `--csv`)
+- **Scatter/line**: `author_selection_spread.py`, `reselection_probability.py` — per-author or per-work trends
+- **Tables/summaries**: formatted text tables, gender summaries, retention summaries
+
+Most scripts use hardcoded DB or CSV paths; `anthology_network.py` and a few others require `--csv`.
 
 **`tests/`** — pytest unit tests for analysis functions. Tests import internal `compute()` and helper functions directly from `analysis/` scripts via `sys.path.insert`, so they cover business logic without invoking `main()`.
 
 **`queries/`** — SQL files read and executed by DB-backed scripts against the PostgreSQL database.
+
+## Database schema
+
+Key tables (PostgreSQL, database `anthologies`):
+
+| Table | Key columns |
+|-------|-------------|
+| `data_series` | `id`, `name` — anthology series (e.g. id=3 = NAAAL, id=17 = Wiley Blackwell) |
+| `data_edition` | `id`, `year`, `edition_number`, `series_id`, `title` — one row per anthology edition |
+| `data_volume` | `id`, `edition_id`, `volume_number` — physical volumes within an edition |
+| `data_work` | `id`, `title`, `parent_id` — `parent_id` links excerpts to their root work |
+| `data_workinanthology` | `work_id`, `volume_id` — many-to-many works ↔ volumes |
+| `data_author` | `id`, `name`, `birth_year`, `death_year` |
+| `data_work_authors` | `work_id`, `author_id` — many-to-many works ↔ authors |
+| `data_literarytradition` | `id`, `name` — e.g. `'African-American Literature'` |
+| `data_edition_literary_traditions` | `edition_id`, `literarytradition_id` — tags editions by tradition |
+
+**Join path for works in an edition:** `data_edition` → `data_volume` (via `edition_id`) → `data_workinanthology` (via `volume_id`) → `data_work` (via `work_id`)
+
+**Filtering to AFAM tradition:** join `data_edition_literary_traditions` + `data_literarytradition` and filter `lt.name = 'African-American Literature'`. There are 26 such editions (1929–2025).
+
+**Key edition IDs** (NAAAL series_id=3): 1997 ed.1 → id=16, 2004 ed.2 → id=17, 2014 ed.3 → id=13, 2025 ed.4 → id=43. Call and Response 1998 → id=60 (no series).
 
 ## Data access: two patterns
 
@@ -101,7 +130,7 @@ Key columns in `2026-03-13` data: `series_id`, `anthology_edition`, `anthology_v
 
 ## Flags common across scripts
 
-- `--only-root-works` / `--include-excerpts` — include or exclude works with a parent (`parent_work_id` / `parent_work_title` non-empty); root-only is the default in DB-backed scripts
+- `--only-root-works` / `--include-excerpts` — DB-backed scripts default to root-only; pass `--include-excerpts` to add excerpt works. CSV-backed scripts include excerpts by default; pass `--only-root-works` to filter them out. "Root works" means `parent_work_id` / `parent_work_title` is empty.
 - `--save-csv` — write output tables to `data/` instead of printing to stdout
 - `--data-file` — override the default `DATA_FILE` path (supported in some CSV-backed scripts)
 - `--year` / `--mode` — in `logistic_reselection.py`: target edition year and whether to model `authors`, `works`, or `both`
