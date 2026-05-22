@@ -1,6 +1,6 @@
 -- Compare work selections between the 1971 Cavalcade: Negro American Writing
--- from 1760 to the Present (1st ed. of Cavalcade series, edition_id=42) and
--- the 1972 Black Writers of America: A Comprehensive Anthology (edition_id=47).
+-- from 1760 to the Present (1st ed. of Cavalcade series, edition_id=54) and
+-- the 1972 Black Writers of America: A Comprehensive Anthology (edition_id=58).
 --
 -- source: 'Cavalcade' | 'Black Writers of America' | 'Both'
 -- prior_count: distinct African-American Literature-tagged edition appearances
@@ -18,13 +18,13 @@ cavalcade_works AS (
     SELECT DISTINCT wia.work_id
     FROM data_workinanthology wia
     JOIN data_volume v ON v.id = wia.volume_id
-    WHERE v.edition_id = 42
+    WHERE v.edition_id = 54
 ),
 bwa_works AS (
     SELECT DISTINCT wia.work_id
     FROM data_workinanthology wia
     JOIN data_volume v ON v.id = wia.volume_id
-    WHERE v.edition_id = 47
+    WHERE v.edition_id = 58
 ),
 target_works AS (
     SELECT work_id,
