@@ -12,7 +12,9 @@ SELECT DISTINCT
     e.id                       AS edition_id,
     e."year"                   AS anthology_publication_year,
     e.edition_number,
+    e.title                    AS edition_title,
     s.id                       AS series_id,
+    s."name"                   AS series_name,
     a.id                       AS author_id,
     a."name"                   AS author_name,
     a.birth_year               AS author_birth_year
