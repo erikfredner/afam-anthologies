@@ -59,13 +59,11 @@ Scripts are standalone — each is a self-contained analysis with a `main()` and
 | `authors_without_frequent_works.py` | Authors who appear often but whose individual works are rarely reselected |
 | `women_author_gaps.py` | Gender gap analysis using author gender data |
 
-**`viz/`** — 34 scripts producing charts, network graphs, and formatted tables. PNG outputs are gitignored and written to `viz/` or the current directory. Categories:
-- **Heatmaps**: `anthology_overlap_heatmap.py`, `author_work_ratio_heatmap.py` — overlap matrices between editions
+**`viz/`** — 34 scripts producing charts, network graphs, and formatted tables. PNG outputs are gitignored and written to `viz/` or the current directory. **All new viz scripts use DB.** A handful of legacy scripts still read from `data/*.csv`. Categories:
+- **Heatmaps**: `anthology_overlap_heatmap.py`, `author_overlap_heatmap.py`, `author_work_ratio_heatmap.py` — overlap matrices between editions
 - **Networks**: `anthology_network.py`, `work_network.py` — bipartite co-occurrence graphs (require `--csv`)
 - **Scatter/line**: `author_selection_spread.py`, `reselection_probability.py` — per-author or per-work trends
 - **Tables/summaries**: formatted text tables, gender summaries, retention summaries
-
-Most scripts use hardcoded DB or CSV paths; `anthology_network.py` and a few others require `--csv`.
 
 **`tests/`** — pytest unit tests for analysis functions. Tests import internal `compute()` and helper functions directly from `analysis/` scripts via `sys.path.insert`, so they cover business logic without invoking `main()`.
 
@@ -93,11 +91,11 @@ Key tables (PostgreSQL, database `anthologies`):
 
 **Key edition IDs** (NAAAL series_id=3): 1997 ed.1 → id=16, 2004 ed.2 → id=17, 2014 ed.3 → id=13, 2025 ed.4 → id=43. Call and Response 1998 → id=60 (no series).
 
-## Data access: two patterns
+## Data access
 
-**CSV-backed scripts** (older): hardcode a `DATA_FILE` constant pointing to `data/*.csv`. Overridable via `--data-file` in some scripts.
+**DB-backed scripts** (standard): connect to PostgreSQL via `psycopg`, reading connection params from `.env`. SQL is stored in `queries/*.sql` and loaded at runtime. All new scripts — analysis and viz — should use this pattern.
 
-**DB-backed scripts** (newer): connect to PostgreSQL via `psycopg`, reading connection params from `.env`. SQL is stored in `queries/*.sql` and loaded at runtime. These scripts do not use local CSV files as input.
+**CSV-backed scripts** (legacy analysis only): hardcode a `DATA_FILE` constant pointing to `data/*.csv`. Overridable via `--data-file` in some scripts. Do not use this pattern for new viz scripts.
 
 ### Database setup
 
@@ -130,7 +128,6 @@ Key columns in `2026-03-13` data: `series_id`, `anthology_edition`, `anthology_v
 
 ## Flags common across scripts
 
-- `--only-root-works` / `--include-excerpts` — DB-backed scripts default to root-only; pass `--include-excerpts` to add excerpt works. CSV-backed scripts include excerpts by default; pass `--only-root-works` to filter them out. "Root works" means `parent_work_id` / `parent_work_title` is empty.
+- `--only-root-works` / `--include-excerpts` — DB-backed scripts default to root-only; pass `--include-excerpts` to add excerpt works. Legacy CSV scripts include excerpts by default; pass `--only-root-works` to filter. "Root works" means `parent_id` is null.
 - `--save-csv` — write output tables to `data/` instead of printing to stdout
-- `--data-file` — override the default `DATA_FILE` path (supported in some CSV-backed scripts)
 - `--year` / `--mode` — in `logistic_reselection.py`: target edition year and whether to model `authors`, `works`, or `both`
