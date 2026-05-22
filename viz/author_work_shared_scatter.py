@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import psycopg
 from dotenv import dotenv_values
@@ -25,12 +26,14 @@ from dotenv import dotenv_values
 ENV_FILE = Path(__file__).parent.parent / ".env"
 QUERIES = Path(__file__).parent.parent / "queries"
 OUT_FILE = Path(__file__).parent / "author_work_shared_scatter.png"
+OUT_FILE_LOG = Path(__file__).parent / "author_work_shared_scatter_log.png"
 
 SERIES_ID_ABBREV: dict[str, str] = {
     "3": "NAAAL",
     "8": "Afro-Am. Writing",
     "12": "AAL Anthology",
     "17": "Wiley Blackwell AAL",
+    "19": "Cavalcade",
 }
 
 STANDALONE_SHORT: dict[str, str] = {
@@ -40,7 +43,6 @@ STANDALONE_SHORT: dict[str, str] = {
     "63": "Amer. Lit. by Negro Authors",
     "56": "Intro to Black Lit.",
     "43": "Black Voices",
-    "42": "Cavalcade",
     "46": "Black Insights",
     "48": "Black Lit. in America",
     "47": "Black Writers of America",
@@ -51,8 +53,6 @@ STANDALONE_SHORT: dict[str, str] = {
     "39": "Prentice Hall AAL",
     "86": "Afr. Am. Lit.",
     "50": "Blackamerican Lit.",
-    "40": "New Cavalcade v.1",
-    "41": "New Cavalcade v.2",
 }
 
 
@@ -147,19 +147,47 @@ def build_pairs(
 # ── Plot ──────────────────────────────────────────────────────────────────────
 
 
-def plot(pairs: list[tuple[int, int]], out: Path) -> None:
-    xs = [p[0] for p in pairs]
-    ys = [p[1] for p in pairs]
+def plot(pairs: list[tuple[int, int]], out: Path, log: bool = False) -> None:
+    rng = np.random.default_rng(42)
+
+    more_a = [(a, w) for a, w in pairs if a > w]
+    more_w = [(a, w) for a, w in pairs if w > a]
+    equal = [(a, w) for a, w in pairs if a == w]
+
+    lo = 0.5 if log else 0.0
+
+    def jitter(pts: list[tuple[int, int]]) -> tuple[np.ndarray, np.ndarray]:
+        arr = np.array(pts, dtype=float)
+        arr += rng.uniform(-0.4, 0.4, arr.shape)
+        arr = np.clip(arr, lo, None)
+        return arr[:, 0], arr[:, 1]
 
     fig, ax = plt.subplots(figsize=(8, 8))
 
-    ax.scatter(xs, ys, alpha=0.6, s=40, color="steelblue", linewidths=0)
+    all_xs = [p[0] for p in pairs]
+    all_ys = [p[1] for p in pairs]
+    lim = max(max(all_xs), max(all_ys)) * 1.05
+    ax.plot([lo, lim], [lo, lim], color="grey", linestyle="--", linewidth=1, zorder=0)
 
-    lim = max(max(xs), max(ys)) * 1.05
-    ax.plot([0, lim], [0, lim], color="grey", linestyle="--", linewidth=1, zorder=0)
+    if log:
+        ax.set_xscale("log")
+        ax.set_yscale("log")
 
-    ax.set_xlim(0, lim)
-    ax.set_ylim(0, lim)
+    groups = [
+        (more_a, "o", f"More shared authors ({len(more_a)})"),
+        (more_w, "^", f"More shared works ({len(more_w)})"),
+        (equal, "s", f"Equal ({len(equal)})"),
+    ]
+    for pts, marker, label in groups:
+        if not pts:
+            continue
+        jx, jy = jitter(pts)
+        ax.scatter(jx, jy, alpha=0.6, s=40, color="steelblue", marker=marker,
+                   linewidths=0, label=label)
+
+    ax.set_xlim(lo if log else 0, lim)
+    ax.set_ylim(lo if log else 0, lim)
+    ax.legend(fontsize=9, loc="upper left")
 
     ax.set_xlabel("Shared authors", fontsize=13)
     ax.set_ylabel("Shared works", fontsize=13)
@@ -247,6 +275,7 @@ def main() -> None:
 
     OUT_FILE.parent.mkdir(exist_ok=True)
     plot(pairs, OUT_FILE)
+    plot(pairs, OUT_FILE_LOG, log=True)
 
 
 if __name__ == "__main__":

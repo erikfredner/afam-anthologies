@@ -38,6 +38,7 @@ SERIES_ID_ABBREV: dict[str, str] = {
     "8": "Afro-Am. Writing",
     "12": "AAL Anthology",
     "17": "Wiley Blackwell AAL",
+    "19": "Cavalcade",
 }
 
 STANDALONE_SHORT: dict[str, str] = {
@@ -47,7 +48,6 @@ STANDALONE_SHORT: dict[str, str] = {
     "63": "Amer. Lit. by Negro Authors",
     "56": "Intro to Black Lit.",
     "43": "Black Voices",
-    "42": "Cavalcade",
     "46": "Black Insights",
     "48": "Black Lit. in America",
     "47": "Black Writers of America",
@@ -58,8 +58,6 @@ STANDALONE_SHORT: dict[str, str] = {
     "39": "Prentice Hall AAL",
     "86": "Afr. Am. Lit.",
     "50": "Blackamerican Lit.",
-    "40": "New Cavalcade v.1",
-    "41": "New Cavalcade v.2",
 }
 
 
