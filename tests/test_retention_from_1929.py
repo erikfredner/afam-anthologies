@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "viz"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "viz" / "reselection"))
 
 from retention_from_1929 import compute_retention  # noqa: E402
 

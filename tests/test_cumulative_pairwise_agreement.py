@@ -4,11 +4,10 @@ import math
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "viz"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "viz" / "reselection"))
 
 from cumulative_pairwise_agreement import (  # noqa: E402
     compute_snapshots,

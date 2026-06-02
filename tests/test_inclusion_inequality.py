@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import sys
 from pathlib import Path
 
@@ -8,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "viz"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "viz" / "inequality"))
 
 from inclusion_inequality import (  # noqa: E402
     assign_edition_key,

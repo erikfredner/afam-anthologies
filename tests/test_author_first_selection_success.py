@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "analysis"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "analysis" / "reselection"))
 
 from author_first_selection_success import compute  # noqa: E402
 

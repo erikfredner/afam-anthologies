@@ -10,17 +10,17 @@ Python analysis scripts for studying African American literary anthologies — e
 
 ```bash
 # Requires Python 3.13+ (3.14 in .python-version)
-# Install dependencies
+# Install dependencies (also installs the local `afam` package in editable mode)
 uv sync
 
 # Run an analysis script
-uv run python analysis/logistic_reselection.py --year 2025 --mode both
-uv run python analysis/reselection_vs_chance.py --only-root-works
-uv run python analysis/new_selection_reselection_probability.py --save-csv
+uv run python analysis/predictability/logistic_reselection.py --year 2025 --mode both
+uv run python analysis/reselection/reselection_vs_chance.py --only-root-works
+uv run python analysis/reselection/new_selection_reselection_probability.py --save-csv
 
-# Run a viz script
-uv run python viz/anthology_overlap_heatmap.py
-uv run python viz/anthology_network.py --csv data/myfile.csv --out network.png
+# Run a viz script (figures land in output/)
+uv run python viz/heatmaps/anthology_overlap_heatmap.py
+uv run python viz/networks/anthology_network.py --csv data/myfile.csv --out output/network.png
 
 # Run all tests
 uv run pytest
@@ -33,50 +33,84 @@ uv run ruff check .
 uv run ruff format .
 ```
 
-## Architecture
+## Repository layout
 
-Scripts are standalone — each is a self-contained analysis with a `main()` and `if __name__ == "__main__"` guard. There is no shared library or import graph between scripts.
+```
+afam-anthologies/
+├── src/afam/         # shared utility package — imported by every script
+├── analysis/         # statistical/stdout/CSV analysis scripts (subfolders by theme)
+├── viz/              # figure-producing scripts (subfolders by theme)
+├── queries/          # SQL files loaded by DB-backed scripts
+├── data/             # CSV inputs and CSV outputs (gitignored)
+├── output/           # generated PNG/PDF figures (gitignored)
+└── tests/            # pytest suites that import script helpers via sys.path
+```
 
-**`analysis/`** — statistical/overlap analysis scripts that print results to stdout or write CSVs:
+## Shared utilities (`src/afam/`)
 
-| Script | Description |
-|--------|-------------|
-| `logistic_reselection.py` | Unified logistic regression predicting author or work reselection (DB-backed; replaces the old per-edition logistic scripts) |
-| `new_selection_reselection_probability.py` | Reselection probability for debut authors/works, with Wilson CI by decade (DB-backed) |
-| `authors_in_half_or_more_afam_eds.py` | Authors appearing in ≥50% of AFAM editions (DB-backed) |
-| `works_in_half_or_more_afam_eds.py` | Works appearing in ≥50% of AFAM editions (DB-backed) |
-| `half_or_more_sentences.py` | Summary sentences for authors/works in ≥50% of editions (DB-backed) |
-| `overlap_naaal_1996.py` | Work and author overlap between NAAAL 1996 and pre-1996 anthologies |
-| `freq_bucket_predictability.py` | Recall analysis by prior appearance frequency buckets |
-| `simulate_naaal1996_selection.py` | Logit + Bayesian models trained on pre-1996 data to predict NAAAL 1996 |
-| `simulate_naaal2025_selection.py` | Logit + Bayesian models trained on pre-2025 data to predict NAAAL 2025 |
-| `simulate_author_work_overlap.py` | Monte Carlo simulation of author vs. work pairwise overlap |
-| `reselection_vs_chance.py` | Reselection rates vs. chance with statistical significance tests |
-| `author_first_selection_success.py` | Author debut selection and subsequent retention rates |
-| `author_vs_work_debut_reselection.py` | Author vs. work debut reselection comparison |
-| `post_debut_performance.py` | Post-debut selection performance analysis |
-| `most_anthologized.py` | Most frequently anthologized authors and works |
-| `authors_without_frequent_works.py` | Authors who appear often but whose individual works are rarely reselected |
-| `women_author_gaps.py` | Gender gap analysis using author gender data |
+Every script imports its DB connection, SQL loading, CSV path, and figure-output helpers from `afam.*` instead of redefining them. The package is installed in editable mode by `uv sync` via the `src/` layout declared in `pyproject.toml`.
 
-**`viz/`** — 34 scripts producing charts, network graphs, and formatted tables. PNG outputs are gitignored and written to `viz/` or the current directory. **All new viz scripts use DB.** A handful of legacy scripts still read from `data/*.csv`. Categories:
-- **Heatmaps**: `anthology_overlap_heatmap.py`, `author_overlap_heatmap.py`, `author_work_ratio_heatmap.py` — overlap matrices between editions
-- **Networks**: `anthology_network.py`, `work_network.py` — bipartite co-occurrence graphs (require `--csv`)
-- **Scatter/line**: `author_selection_spread.py`, `reselection_probability.py` — per-author or per-work trends
-- **Tables/summaries**: formatted text tables, gender summaries, retention summaries
+| Module | What it exposes |
+|---|---|
+| `afam` (package root) | `REPO_ROOT`, `DATA_DIR`, `QUERIES_DIR`, `OUTPUT_DIR`, `ENV_FILE` |
+| `afam.db` | `parse_db_params(env_file)`, `connect(env_file)`, `query(sql_or_path, params)` |
+| `afam.sql` | `query_path(name)`, `load_query(name)` — resolves `queries/<name>.sql` |
+| `afam.data` | `strip_volume`, `assign_edition_key_pipe`, `assign_edition_key_underscore`, `load_csv(name)` |
+| `afam.viz_style` | `OUTPUT_DIR` (auto-mkdir), `DPI`, `FIGSIZE`, `WORK_COLOR`, `AUTHOR_COLOR` |
+| `afam.cli` | `add_root_works_flag(parser)`, `add_save_csv_flag(parser)` |
 
-**`tests/`** — pytest unit tests for analysis functions. Tests import internal `compute()` and helper functions directly from `analysis/` scripts via `sys.path.insert`, so they cover business logic without invoking `main()`.
+A typical DB-backed script:
 
-**`queries/`** — SQL files read and executed by DB-backed scripts against the PostgreSQL database.
+```python
+from afam.db import query
+from afam.sql import query_path
+from afam.viz_style import OUTPUT_DIR
+
+df = query(query_path("works-per-afam-edition"))
+fig.savefig(OUTPUT_DIR / "my_figure.png", dpi=300)
+```
+
+## `analysis/` — non-figure outputs
+
+Scripts that print to stdout or write CSVs to `data/`.
+
+| Subfolder | Scripts | Purpose |
+|---|---|---|
+| `overlap/` | `overlap_naaal_1996`, `simulate_author_work_overlap`, `half_or_more_sentences`, `authors_in_half_or_more_afam_eds`, `works_in_half_or_more_afam_eds` | Author/work overlap counts and Monte Carlo simulations |
+| `reselection/` | `reselection_vs_chance`, `new_selection_reselection_probability`, `author_first_selection_success`, `author_vs_work_debut_reselection`, `post_debut_performance`, `authors_without_frequent_works` | Debut reselection rates and post-debut retention |
+| `predictability/` | `logistic_reselection`, `freq_bucket_predictability`, `predictability_over_time`, `simulate_naaal1996_selection`, `simulate_naaal2025_selection` | Logistic regression and predictability metrics for NAAAL inclusion |
+| `gender/` | `women_author_gaps`, `author_gender_summary` | Gender-gap analyses |
+| `summaries/` | `most_anthologized`, `works_without_authors_naal_naaal`, `count_anthologies`, `count_works`, `edition_stats`, `edition_summary`, `format_author_anthology_counts`, `format_work_anthology_counts`, `author_never_cut`, `compare_series_authors`, `naal_exclusive_authors`, `naal_exclusive_works`, `list_reselected_works` | Counts, formatted tables, exclusivity lists |
+
+## `viz/` — figure-producing scripts
+
+Each script writes its PNG/PDF to `output/`.
+
+| Subfolder | Scripts | Purpose |
+|---|---|---|
+| `heatmaps/` | `anthology_overlap_heatmap`, `author_overlap_heatmap`, `author_work_ratio_heatmap`, `author_work_shared_scatter` | Pairwise overlap matrices between editions |
+| `networks/` | `anthology_network`, `work_network` | Bipartite co-occurrence graphs (require `--csv`) |
+| `reselection/` | `reselection_probability`, `work_reselection_probability`, `gender_reselection`, `cumulative_pairwise_agreement`, `series_pair_reselection`, `author_selection_spread`, `retention_from_1929`, `retention_from_1941`, `first_selection_success` | Per-author/work reselection and retention trends |
+| `predictability/` | `predictability_over_time`, `predictability_repeat_focus`, `naaal1996_prior_selection` | Visualizations of predictability metrics and logistic-model curves |
+| `inequality/` | `inclusion_inequality`, `work_selection_divergence`, `selection_frequency_decay` | Frequency distributions, divergence, survival curves |
+| `misc/` | `canonical_author_map`, `form_by_edition` | One-off canonical-author and literary-form visualizations |
+
+## `tests/`
+
+Pytest unit tests for helpers inside analysis/viz scripts. They `sys.path.insert` the relevant subfolder and import `compute()`/helper functions directly, so tests cover business logic without invoking `main()`. Whenever a script moves between subfolders, update the matching `sys.path.insert` line.
+
+## `queries/`
+
+SQL files executed by DB-backed scripts via `afam.sql.query_path(name)` (name is the file's stem; the `.sql` suffix is optional).
 
 ## Database schema
 
 Key tables (PostgreSQL, database `anthologies`):
 
 | Table | Key columns |
-|-------|-------------|
+|---|---|
 | `data_series` | `id`, `name` — anthology series (e.g. id=3 = NAAAL, id=17 = Wiley Blackwell) |
-| `data_edition` | `id`, `year`, `edition_number`, `series_id`, `title` — one row per anthology edition |
+| `data_edition` | `id`, `year`, `edition_number`, `series_id`, `title` — one row per edition |
 | `data_volume` | `id`, `edition_id`, `volume_number` — physical volumes within an edition |
 | `data_work` | `id`, `title`, `parent_id` — `parent_id` links excerpts to their root work |
 | `data_workinanthology` | `work_id`, `volume_id` — many-to-many works ↔ volumes |
@@ -91,43 +125,39 @@ Key tables (PostgreSQL, database `anthologies`):
 
 **Key edition IDs** (NAAAL series_id=3): 1997 ed.1 → id=16, 2004 ed.2 → id=17, 2014 ed.3 → id=13, 2025 ed.4 → id=43. Call and Response 1998 → id=60 (no series).
 
-## Data access
+## Database setup
 
-**DB-backed scripts** (standard): connect to PostgreSQL via `psycopg`, reading connection params from `.env`. SQL is stored in `queries/*.sql` and loaded at runtime. All new scripts — analysis and viz — should use this pattern.
+`.env` at the repo root must contain a `DATABASE_URL` in this format:
 
-**CSV-backed scripts** (legacy analysis only): hardcode a `DATA_FILE` constant pointing to `data/*.csv`. Overridable via `--data-file` in some scripts. Do not use this pattern for new viz scripts.
-
-### Database setup
-
-`.env` must contain a `DATABASE_URL` in this format:
 ```
 DATABASE_URL=PGPASSWORD=<password> psql -h <host> -U <user> <dbname>
 ```
 
-The DB helper in each script parses this string to extract `host`, `user`, `password`, and `dbname`.
+`afam.db.parse_db_params()` parses this string into psycopg connection kwargs.
 
-## Data (CSV)
+## Data inputs (CSV)
 
-CSV files live in `data/` (gitignored). Primary source datasets:
+CSV files live in `data/` (gitignored). DB-backed scripts read live from PostgreSQL; only a few legacy scripts still read CSV. Primary source datasets:
 
 | File | Used by |
-|------|---------|
-| `2026-03-13 works per afam anthology.csv` | Most 2026-era CSV-backed analysis scripts |
-| `2026-03-13 work ids in afam anthologies.csv` | Some logistic/work scripts |
-| `2026-03-13 author ids in afam anthologies.csv` | `author_first_selection_success.py` |
-| `2026-03-17 af am anthology authors with genders.csv` | `women_author_gaps.py` |
-| `202505121539 authors works.csv` | `freq_bucket_predictability.py`, `overlap_naaal_1996.py` |
+|---|---|
+| `2026-03-13 works per afam anthology.csv` | Most 2026-era CSV-backed scripts |
+| `2026-03-13 work ids in afam anthologies.csv` | Some heatmap/inequality scripts |
+| `2026-03-13 author ids in afam anthologies.csv` | `analysis/reselection/author_first_selection_success.py`, heatmaps |
+| `2026-03-17 af am anthology authors with genders.csv` | Gender analyses |
+| `202505121539 authors works.csv` | `analysis/predictability/freq_bucket_predictability.py`, `analysis/overlap/overlap_naaal_1996.py` |
 
-Key columns in `202505` data: `work_id`, `work_author`, `author_id`, `anthology_id`, `anthology_series`, `anthology_edition`, `anthology_year`, `series_id`, `parent_work_id` / `parent_work_title`, `work_form`.
+Two `edition_key` formats are derived consistently across scripts via `afam.data`:
 
-Key columns in `2026-03-13` data: `series_id`, `anthology_edition`, `anthology_volume`, `anthology_title`, `anthology_id`, `publication_year`, `work_id` / `author_id`.
+- **Pipe format** (`{series}|{edition}`, 2026 datasets) — `assign_edition_key_pipe(df)`
+- **Underscore format** (`{series_id}_{anthology_edition}`, 202505 dataset) — `assign_edition_key_underscore(df)`
 
-**`edition_key`** is a derived column computed consistently across scripts:
-- In `202505` data: `{series_id}_{anthology_edition}` when `series_id` is non-empty, else `anthology_id`
-- In `2026` data: `{series_id}|{anthology_edition}` (pipe-separated) when `series_id` is non-empty, else `anthology_id`
+## Outputs
+
+Generated PNG/PDF figures are written to `output/` (auto-created by `afam.viz_style`, gitignored). Generated CSVs are written to `data/`.
 
 ## Flags common across scripts
 
-- `--only-root-works` / `--include-excerpts` — DB-backed scripts default to root-only; pass `--include-excerpts` to add excerpt works. Legacy CSV scripts include excerpts by default; pass `--only-root-works` to filter. "Root works" means `parent_id` is null.
-- `--save-csv` — write output tables to `data/` instead of printing to stdout
-- `--year` / `--mode` — in `logistic_reselection.py`: target edition year and whether to model `authors`, `works`, or `both`
+- `--only-root-works` / `--include-excerpts` — root-only is the default for DB-backed scripts; pass `--include-excerpts` to include excerpt works. "Root works" means `parent_id` is null. Shared parser scaffolding is available via `afam.cli.add_root_works_flag(parser)`.
+- `--save-csv` — write output tables to `data/` instead of stdout. Available via `afam.cli.add_save_csv_flag(parser)`.
+- `--year` / `--mode` — in `analysis/predictability/logistic_reselection.py`: target edition year and whether to model `authors`, `works`, or `both`.

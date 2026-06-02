@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "viz"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "viz" / "misc"))
 
 from canonical_author_map import (  # noqa: E402
     assign_edition_key,
