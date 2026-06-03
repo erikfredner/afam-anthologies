@@ -17,7 +17,8 @@ SELECT DISTINCT
     s."name"                   AS series_name,
     a.id                       AS author_id,
     a."name"                   AS author_name,
-    a.birth_year               AS author_birth_year
+    a.birth_year               AS author_birth_year,
+    a.death_year               AS author_death_year
 FROM data_work w
 JOIN data_workinanthology wia  ON wia.work_id = w.id
 JOIN data_volume v             ON v.id = wia.volume_id
