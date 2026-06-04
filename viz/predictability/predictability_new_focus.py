@@ -32,6 +32,7 @@ import pandas as pd
 from scipy.stats import linregress, spearmanr
 
 from afam import DATA_DIR
+from afam.editions import EDITION_LABELS
 from afam.viz_style import OUTPUT_DIR
 
 DEFAULT_CSV_DIR = DATA_DIR
@@ -40,35 +41,6 @@ DEFAULT_OUT = OUTPUT_DIR / "predictability_new_focus.png"
 POINT_COLOR = "#111111"
 TREND_COLOR = "#1f5fa8"
 OUTLIER_COLOR = "#c0392b"
-
-EDITION_LABELS = {
-    72: "Calverton",
-    71: "Cromwell (Readings)",
-    68: "Negro Caravan",
-    69: "Dreer",
-    55: "Black Voices",
-    63: "Intro to Black Lit.",
-    64: "Dark Symphony",
-    54: "Cavalcade",
-    57: "Black Insights",
-    59: "Black Lit. in America",
-    61: "Blackamerican Lit.",
-    21: "Afro-Am. Writing ed.1",
-    58: "Black Writers of Am.",
-    20: "Afro-Am. Writing ed.2",
-    19: "New Cavalcade",
-    56: "AAL: Brief Intro.",
-    70: "Cornerstones",
-    16: "NAAAL ed.1",
-    32: "AAL ed.2",
-    60: "Call & Response",
-    53: "Prentice Hall",
-    17: "NAAAL ed.2",
-    73: "AAL (2004)",
-    13: "NAAAL ed.3",
-    18: "Wiley Blackwell",
-    43: "NAAAL ed.4",
-}
 
 PANELS = [
     (
