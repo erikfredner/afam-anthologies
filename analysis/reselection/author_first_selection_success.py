@@ -17,8 +17,8 @@ import re
 import pandas as pd
 
 from afam import DATA_DIR
-
-DATA_FILE = DATA_DIR / "2026-03-13 author ids in afam anthologies.csv"
+from afam.db import query
+from afam.sql import query_path
 
 DETAIL_CSV = "author_first_selection_success_detail.csv"
 EDITION_CSV = "author_first_selection_success_edition.csv"
@@ -75,15 +75,77 @@ def _edition_label(edition_key: str, year: int, ek_to_title: dict[str, str]) -> 
     return f"{title[:30]} ({year})"
 
 
+def _clean_id(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    text = str(value).strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
+
+
+def _prepare_db_frame(df_raw: pd.DataFrame) -> pd.DataFrame:
+    df = df_raw.copy()
+    df["publication_year"] = df["anthology_publication_year"].astype(int)
+    df = df[df["author_id"].notna()].copy()
+    df["author_id"] = df["author_id"].map(_clean_id)
+    df = df[df["author_id"] != ""].copy()
+    df["edition_key"] = [
+        f"{_clean_id(series_id)}|{_clean_id(edition_number)}"
+        if _clean_id(series_id)
+        else _clean_id(edition_id)
+        for series_id, edition_number, edition_id in zip(
+            df["series_id"], df["edition_number"], df["edition_id"], strict=False
+        )
+    ]
+    df["edition_sort"] = df["edition_id"].map(_clean_id).astype(int)
+    df["anthology_title"] = df.apply(
+        lambda r: (
+            f"{r['series_name']} ed.{_clean_id(r['edition_number'])}"
+            if _clean_id(r.get("series_id")) and pd.notna(r.get("series_name"))
+            else str(r.get("edition_title") or r["edition_key"])
+        ),
+        axis=1,
+    )
+    return df[
+        [
+            "edition_key",
+            "edition_sort",
+            "publication_year",
+            "anthology_title",
+            "author_id",
+        ]
+    ].drop_duplicates()
+
+
+def _prepare_legacy_frame(df_raw: pd.DataFrame) -> pd.DataFrame:
+    df = df_raw.copy()
+    df["publication_year"] = df["publication_year"].astype(int)
+    df = assign_edition_key(df)
+    df["edition_sort"] = df["edition_key"]
+    return df[
+        [
+            "edition_key",
+            "edition_sort",
+            "publication_year",
+            "anthology_title",
+            "author_id",
+        ]
+    ].drop_duplicates()
+
+
+def _prepare_frame(df_raw: pd.DataFrame) -> pd.DataFrame:
+    if {"edition_id", "anthology_publication_year", "series_id"}.issubset(df_raw.columns):
+        return _prepare_db_frame(df_raw)
+    return _prepare_legacy_frame(df_raw)
+
+
 # ── Core computation ────────────────────────────────────────────────────────────
 
 
 def compute(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return (detail_df, edition_df) from a raw anthology-author DataFrame."""
-    df = df_raw.copy()
-    df["publication_year"] = df["publication_year"].astype(int)
-
-    df = assign_edition_key(df)
+    df = _prepare_frame(df_raw)
 
     # Title lookup: edition_key → first anthology_title seen
     ek_to_title: dict[str, str] = (
@@ -95,26 +157,31 @@ def compute(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         subset=["edition_key", "author_id"]
     ).copy()
 
-    # Edition year = min publication_year per edition_key
-    edition_year = (
-        df.groupby("edition_key")["publication_year"]
-        .min()
-        .rename("edition_year")
-        .reset_index()
+    all_editions = (
+        df[["edition_key", "publication_year", "edition_sort"]]
+        .drop_duplicates("edition_key")
+        .rename(columns={"publication_year": "edition_year"})
+        .sort_values(["edition_year", "edition_sort"], kind="mergesort")
+        .reset_index(drop=True)
     )
+    all_editions["edition_order"] = range(len(all_editions))
+    edition_year = all_editions[["edition_key", "edition_year", "edition_order"]]
     pairs = pairs.merge(edition_year, on="edition_key")
 
-    # All unique editions with their years
-    all_editions = edition_year.copy()
-
-    # For each author: debut = edition with min year; tie-break by smallest edition_key
-    sorted_pairs = pairs.sort_values(["author_id", "edition_year", "edition_key"])
+    # For each author: debut = earliest edition in chronological edition order.
+    sorted_pairs = pairs.sort_values(["author_id", "edition_order", "edition_key"])
     debut = (
         sorted_pairs.groupby("author_id", sort=False)
         .first()
         .reset_index()
-        [["author_id", "edition_key", "edition_year"]]
-        .rename(columns={"edition_key": "debut_edition_key", "edition_year": "debut_year"})
+        [["author_id", "edition_key", "edition_year", "edition_order"]]
+        .rename(
+            columns={
+                "edition_key": "debut_edition_key",
+                "edition_year": "debut_year",
+                "edition_order": "debut_order",
+            }
+        )
     )
 
     # Author → set of edition_keys they appeared in
@@ -128,8 +195,9 @@ def compute(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         aid = row["author_id"]
         debut_ek = row["debut_edition_key"]
         debut_yr = int(row["debut_year"])
+        debut_order = int(row["debut_order"])
 
-        subsequent = all_editions[all_editions["edition_year"] > debut_yr]
+        subsequent = all_editions[all_editions["edition_order"] > debut_order]
         subsequent_count = len(subsequent)
 
         author_eks = author_ek_set.get(aid, set())
@@ -145,6 +213,7 @@ def compute(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         records.append({
             "debut_edition_key": debut_ek,
             "debut_year": debut_yr,
+            "debut_order": debut_order,
             "author_id": aid,
             "subsequent_count": subsequent_count,
             "reselection_count": reselection_count,
@@ -258,7 +327,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    df = pd.read_csv(DATA_FILE, dtype=str, na_filter=False)
+    df = query(query_path("work-selection-divergence"))
     detail_df, edition_df = compute(df)
 
     if args.save_csv:

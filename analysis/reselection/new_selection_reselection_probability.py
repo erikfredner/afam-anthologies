@@ -7,9 +7,10 @@ AFAM anthology?
 
 Definitions
 -----------
-debut    : first appearance across all AFAM editions (min publication year)
-reselected: appears in at least one AFAM edition with year > debut_year
-excluded : items debuting in the most recent AFAM year have no subsequent
+debut    : first appearance across all AFAM editions, ordered by
+           (publication year, edition_id)
+reselected: appears in at least one later AFAM edition
+excluded : items debuting in the most recent AFAM edition have no subsequent
            opportunity and are excluded from the denominator
 
 Outputs overall probability + 95% Wilson score confidence interval for both
@@ -18,7 +19,7 @@ works and authors, then the same statistics broken down by debut decade.
 Usage
 -----
     uv run python analysis/new_selection_reselection_probability.py
-    uv run python analysis/new_selection_reselection_probability.py --only-root-works
+    uv run python analysis/new_selection_reselection_probability.py --include-excerpts
     uv run python analysis/new_selection_reselection_probability.py --save-csv
 """
 
@@ -30,8 +31,13 @@ import pandas as pd
 from statsmodels.stats.proportion import proportion_confint
 
 from afam import DATA_DIR
-from afam.db import query as query_db
-from afam.sql import query_path
+from afam.cli import add_root_works_flag
+
+from author_vs_work_debut_reselection import (
+    compute_author_records,
+    compute_work_records,
+    load_data,
+)
 
 OUT_CSV = DATA_DIR / "new_selection_reselection_probability.csv"
 
@@ -55,6 +61,19 @@ def decade_breakdown(df: pd.DataFrame) -> pd.DataFrame:
         s = reselection_stats(grp)
         rows.append({"decade": decade, **s})
     return pd.DataFrame(rows).set_index("decade")
+
+
+def build_reselection_frames(only_root_works: bool) -> tuple[pd.DataFrame, pd.DataFrame]:
+    raw, all_editions = load_data(only_root_works)
+    works = compute_work_records(raw, all_editions)
+    authors = compute_author_records(raw, all_editions)
+    return (
+        works.loc[works["subsequent_count"] > 0, ["work_id", "debut_year", "is_reselected"]].copy(),
+        authors.loc[
+            authors["subsequent_count"] > 0,
+            ["author_id", "debut_year", "is_reselected"],
+        ].copy(),
+    )
 
 
 # ── Reporting ─────────────────────────────────────────────────────────────────
@@ -87,15 +106,11 @@ def print_decade_table(label: str, bkdn: pd.DataFrame) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--only-root-works", action="store_true", help="exclude excerpts (works with a parent)")
+    add_root_works_flag(parser)
     parser.add_argument("--save-csv", action="store_true", help="write results to data/")
     args = parser.parse_args()
 
-    works_df = query_db(query_path("new-selection-reselection-afam-works"))
-    authors_df = query_db(query_path("new-selection-reselection-afam-authors"))
-
-    if args.only_root_works:
-        works_df = works_df[works_df["parent_id"].isna()].copy()
+    works_df, authors_df = build_reselection_frames(args.only_root_works)
 
     works_label = "Works (root only)" if args.only_root_works else "Works"
 

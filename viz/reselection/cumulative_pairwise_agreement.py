@@ -11,7 +11,6 @@ Usage: uv run python viz/cumulative_pairwise_agreement.py
 from __future__ import annotations
 
 import math
-import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -21,10 +20,10 @@ import pandas as pd
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
-from afam import DATA_DIR
+from afam.db import query
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
-DATA_FILE = DATA_DIR / "2026-03-13 works per afam anthology.csv"
 OUT_DIR = OUTPUT_DIR
 
 
@@ -35,57 +34,38 @@ C_RED = "#d62728"
 GRID_KW = dict(alpha=0.25, linestyle=":")
 
 
-# ── Title normalization (private copy) ─────────────────────────────────────────
+def _clean_id(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    text = str(value).strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
 
 
-def _normalize_title(t: str) -> str:
-    t = t.lower().strip()
-    t = re.sub(r"^(from |excerpt from |selections? from )", "", t)
-    t = re.sub(r"[^\w\s]", "", t)
-    return t.strip()
+def _load_and_prepare_db(only_root_works: bool = True) -> pd.DataFrame:
+    df = query(query_path("work-selection-divergence"))
+    print(f"Loaded {len(df)} DB rows, {df['edition_id'].nunique()} editions")
+    if only_root_works:
+        df = df[df["parent_id"].isna()].copy()
+        print(f"  Root-work rows: {len(df)}")
 
-
-# ── Load and prepare (private copy, adapted from work_selection_divergence.py) ─
-
-
-def _load_and_prepare(data_file: Path) -> pd.DataFrame:
-    df = pd.read_csv(data_file, dtype=str, na_filter=False)
-    print(f"Loaded {len(df)} rows, {df['anthology_id'].nunique()} raw anthologies")
-
-    # Build edition_key: series_id|edition when series, else anthology_id
-    df["edition_key"] = df.apply(
-        lambda r: (
-            f"{r['series_id']}|{r['anthology_edition']}"
-            if r["series_id"].strip()
-            else r["anthology_id"]
-        ),
-        axis=1,
-    )
-
-    # Year per edition_key (minimum year across volumes of same edition)
-    year_by_key = (
-        df.groupby("edition_key")["anthology_publication_year"].min().astype(int)
-    )
-    df["ek_year"] = df["edition_key"].map(year_by_key)
-
-    # Normalize work titles
-    df["norm_title"] = df["work_title"].apply(_normalize_title)
-
-    # Explode multi-author rows — split author_ids on ","
-    df["_author_list"] = df["author_ids"].apply(
-        lambda s: [i.strip() for i in s.split(",") if i.strip()]
-    )
-    df_auth = df[df["_author_list"].apply(len) > 0].copy()
-    df_auth = df_auth.explode("_author_list")
-    df_auth = df_auth.rename(columns={"_author_list": "author_id"})
-
-    long = df_auth.drop(
-        columns=[c for c in df_auth.columns if c.startswith("_")],
-        errors="ignore",
-    )
-
+    df = df.dropna(subset=["author_id", "work_id"]).copy()
+    df["edition_key"] = [
+        f"{_clean_id(series_id)}|{_clean_id(edition_number)}"
+        if _clean_id(series_id)
+        else _clean_id(edition_id)
+        for series_id, edition_number, edition_id in zip(
+            df["series_id"], df["edition_number"], df["edition_id"], strict=False
+        )
+    ]
+    df["ek_year"] = df["anthology_publication_year"].astype(int)
+    df["author_id"] = df["author_id"].map(_clean_id)
+    df["work_id"] = df["work_id"].map(_clean_id)
+    long = df[["edition_key", "ek_year", "author_id", "work_id"]].drop_duplicates()
     print(f"  Unique edition_keys: {long['edition_key'].nunique()}")
     print(f"  Unique authors: {long['author_id'].nunique()}")
+    print(f"  Unique works: {long['work_id'].nunique()}")
     print(f"  Total long rows: {len(long)}")
     return long
 
@@ -113,7 +93,8 @@ def compute_snapshots(long: pd.DataFrame) -> pd.DataFrame:
     Parameters
     ----------
     long:
-        DataFrame with columns: edition_key, ek_year, author_id, norm_title.
+        DataFrame with columns: edition_key, ek_year, author_id, and either
+        work_id or norm_title.
 
     Returns
     -------
@@ -127,8 +108,9 @@ def compute_snapshots(long: pd.DataFrame) -> pd.DataFrame:
         ek: frozenset(grp["author_id"].unique())
         for ek, grp in long.groupby("edition_key")
     }
+    work_col = "work_id" if "work_id" in long.columns else "norm_title"
     ek_to_works: dict[str, frozenset] = {
-        ek: frozenset(grp["norm_title"].unique())
+        ek: frozenset(grp[work_col].unique())
         for ek, grp in long.groupby("edition_key")
     }
 
@@ -243,7 +225,7 @@ def plot_snapshots(df: pd.DataFrame, out_path: Path) -> None:
 
 
 def main() -> None:
-    long = _load_and_prepare(DATA_FILE)
+    long = _load_and_prepare_db(only_root_works=True)
     snapshots = compute_snapshots(long)
 
     print(f"\nSnapshots: {len(snapshots)} years with ≥1 pair")

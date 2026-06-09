@@ -185,21 +185,43 @@ def run_stats(stats: pd.DataFrame) -> dict:
     total_a_resel = int(stats["a_resel"].sum())
 
     # Weighted-average chance rate (weights = slot count per edition)
-    w_chance = float((stats["p_w_chance"] * stats["w_slots"]).sum() / total_w_slots)
-    a_chance = float((stats["p_a_chance"] * stats["a_slots"]).sum() / total_a_slots)
+    w_chance = (
+        float((stats["p_w_chance"] * stats["w_slots"]).sum() / total_w_slots)
+        if total_w_slots
+        else float("nan")
+    )
+    a_chance = (
+        float((stats["p_a_chance"] * stats["a_slots"]).sum() / total_a_slots)
+        if total_a_slots
+        else float("nan")
+    )
 
     # Binomial tests (direction-appropriate one-sided)
     # Works: observed < expected → test whether below chance
-    binom_w = binomtest(total_w_resel, total_w_slots, p=w_chance, alternative="less")
+    binom_w_p = (
+        binomtest(total_w_resel, total_w_slots, p=w_chance, alternative="less").pvalue
+        if total_w_slots and not pd.isna(w_chance)
+        else float("nan")
+    )
     # Authors: observed > expected → test whether above chance
-    binom_a = binomtest(total_a_resel, total_a_slots, p=a_chance, alternative="greater")
+    binom_a_p = (
+        binomtest(total_a_resel, total_a_slots, p=a_chance, alternative="greater").pvalue
+        if total_a_slots and not pd.isna(a_chance)
+        else float("nan")
+    )
 
     # Chi-square 2×2: works vs authors reselection rates
     table = [
         [total_w_resel, total_w_slots - total_w_resel],
         [total_a_resel, total_a_slots - total_a_resel],
     ]
-    chi2_stat, chi2_p, chi2_dof, _ = chi2_contingency(table, correction=False)
+    if total_w_slots == 0 or total_a_slots == 0:
+        chi2_stat, chi2_p, chi2_dof = float("nan"), float("nan"), 1
+    else:
+        try:
+            chi2_stat, chi2_p, chi2_dof, _ = chi2_contingency(table, correction=False)
+        except ValueError:
+            chi2_stat, chi2_p, chi2_dof = float("nan"), float("nan"), 1
 
     # Sign tests: per-edition consistency (how many editions go in the expected direction?)
     n_ed = len(stats)
@@ -214,25 +236,28 @@ def run_stats(stats: pd.DataFrame) -> dict:
     w_delta_per_ed = (w_obs_per_ed - stats["p_w_chance"]).dropna()
     a_delta_per_ed = (a_obs_per_ed - stats["p_a_chance"]).dropna()
     paired_diff = (a_delta_per_ed - w_delta_per_ed).dropna()
-    wilcox_stat, wilcox_p = wilcoxon(paired_diff, alternative="greater")
+    if paired_diff.empty or (paired_diff == 0).all():
+        wilcox_stat, wilcox_p = float("nan"), float("nan")
+    else:
+        wilcox_stat, wilcox_p = wilcoxon(paired_diff, alternative="greater")
 
     return {
         "total_w_slots": total_w_slots,
         "total_w_resel": total_w_resel,
-        "w_obs_rate": total_w_resel / total_w_slots,
+        "w_obs_rate": total_w_resel / total_w_slots if total_w_slots else float("nan"),
         "w_chance_rate": w_chance,
         "w_ratio": (total_w_resel / total_w_slots) / w_chance
-        if w_chance
+        if total_w_slots and w_chance
         else float("inf"),
-        "binom_w_p": binom_w.pvalue,
+        "binom_w_p": binom_w_p,
         "total_a_slots": total_a_slots,
         "total_a_resel": total_a_resel,
-        "a_obs_rate": total_a_resel / total_a_slots,
+        "a_obs_rate": total_a_resel / total_a_slots if total_a_slots else float("nan"),
         "a_chance_rate": a_chance,
         "a_ratio": (total_a_resel / total_a_slots) / a_chance
-        if a_chance
+        if total_a_slots and a_chance
         else float("inf"),
-        "binom_a_p": binom_a.pvalue,
+        "binom_a_p": binom_a_p,
         "chi2_stat": chi2_stat,
         "chi2_p": chi2_p,
         "chi2_dof": int(chi2_dof),

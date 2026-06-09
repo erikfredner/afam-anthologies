@@ -17,6 +17,7 @@ Usage: uv run python viz/first_selection_success.py
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -26,11 +27,13 @@ import pandas as pd
 
 # ── Paths ───────────────────────────────────────────────────────────────────────
 
-from afam import DATA_DIR
+from afam.db import query
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
-DATA_FILE = DATA_DIR / "2026-03-13 author ids in afam anthologies.csv"
 OUT_DIR = OUTPUT_DIR
+sys.path.insert(0, str(Path(__file__).parents[2] / "analysis" / "reselection"))
+from author_first_selection_success import compute as compute_author_success  # noqa: E402
 
 
 # ── Edition-key logic (private copy, mirrors selection_frequency_decay.py) ──────
@@ -343,8 +346,9 @@ def fig2_scatter(edition_df: pd.DataFrame, out_dir: Path) -> None:
 
 
 def main() -> None:
-    df_raw = pd.read_csv(DATA_FILE, dtype=str, na_filter=False)
-    edition_df = _compute(df_raw)
+    df_raw = query(query_path("work-selection-divergence"))
+    _, edition_df = compute_author_success(df_raw)
+    edition_df = edition_df.rename(columns={"anthology_label": "short_label"})
 
     OUT_DIR.mkdir(exist_ok=True)
     fig1_bar(edition_df, OUT_DIR)

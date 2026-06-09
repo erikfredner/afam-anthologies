@@ -161,3 +161,17 @@ def test_author_jaccard_gte_work_jaccard():
     assert last["work_median"] == pytest.approx(0.0)
     # The main claim: author >= work
     assert last["author_median"] >= last["work_median"]
+
+
+def test_compute_snapshots_accepts_db_work_ids():
+    rows = [
+        {"edition_key": "A", "ek_year": 1, "author_id": "a1", "work_id": "w1"},
+        {"edition_key": "B", "ek_year": 2, "author_id": "a1", "work_id": "w2"},
+    ]
+    df = pd.DataFrame(rows)
+
+    snaps = compute_snapshots(df)
+
+    assert len(snaps) == 1
+    assert snaps.iloc[0]["author_median"] == pytest.approx(1.0)
+    assert snaps.iloc[0]["work_median"] == pytest.approx(0.0)

@@ -22,7 +22,7 @@ Outputs:
 
 Usage:
     uv run python analysis/reselection/author_vs_work_debut_reselection.py
-    uv run python analysis/reselection/author_vs_work_debut_reselection.py --only-root-works
+    uv run python analysis/reselection/author_vs_work_debut_reselection.py --include-excerpts
     uv run python analysis/reselection/author_vs_work_debut_reselection.py --save-csv
     uv run python analysis/reselection/author_vs_work_debut_reselection.py --out my_plot.png
 """
@@ -36,10 +36,12 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
-from scipy.stats import chi2_contingency
+from scipy.stats import chi2_contingency, fisher_exact
+from statsmodels.stats.contingency_tables import mcnemar
 from statsmodels.stats.proportion import proportion_confint, proportions_ztest
 
 from afam import DATA_DIR
+from afam.cli import add_root_works_flag
 from afam.db import query
 from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
@@ -325,6 +327,11 @@ def _comparison_row(
         chi2, chi2_p = float("nan"), float("nan")
 
     try:
+        _, fisher_p = fisher_exact(table, alternative="greater")
+    except ValueError:
+        fisher_p = float("nan")
+
+    try:
         _, z_p = proportions_ztest([author_k, work_k], [author_n, work_n])
     except (ValueError, ZeroDivisionError):
         z_p = float("nan")
@@ -350,6 +357,7 @@ def _comparison_row(
         "odds_ratio_author_over_work": _safe_div(author_odds, work_odds),
         "chi2": chi2,
         "chi2_p": chi2_p,
+        "fisher_p": fisher_p,
         "two_proportion_z_p": z_p,
     }
 
@@ -416,7 +424,9 @@ def print_summary(summary: pd.DataFrame, works: pd.DataFrame, authors: pd.DataFr
             f"    Diff={fmt_pct(row['rate_difference_author_minus_work'])}  "
             f"RR={row['risk_ratio_author_over_work']:.2f}x  "
             f"OR={row['odds_ratio_author_over_work']:.2f}x  "
-            f"chi2 p={fmt_p(row['chi2_p'])}  z-test p={fmt_p(row['two_proportion_z_p'])}"
+            f"chi2 p={fmt_p(row['chi2_p'])}  "
+            f"Fisher p={fmt_p(row['fisher_p'])}  "
+            f"z-test p={fmt_p(row['two_proportion_z_p'])}"
         )
 
     for label, frame in [("Authors", authors), ("Works", works)]:
@@ -488,21 +498,60 @@ def build_timeseries(works: pd.DataFrame, authors: pd.DataFrame) -> pd.DataFrame
 def build_debut_work_author_outcomes(
     raw: pd.DataFrame, works: pd.DataFrame, authors: pd.DataFrame
 ) -> pd.DataFrame:
-    """Classify whether debut works and their authors return together."""
+    """Classify whether debut works and their authors return after work debut."""
     work_authors = (
         raw[["work_id", "author_id"]]
         .dropna(subset=["work_id", "author_id"])
         .drop_duplicates()
     )
     authors_by_work = work_authors.groupby("work_id")["author_id"].apply(set).to_dict()
-    author_reselected = authors.set_index("author_id")["is_reselected"].to_dict()
+
+    editions = build_edition_table(raw)
+    ed_lookup = editions[["edition_id", "edition_order", "entry_group"]]
+    author_appearances = (
+        raw[["author_id", "edition_id"]]
+        .dropna(subset=["author_id", "edition_id"])
+        .drop_duplicates(["author_id", "edition_id"])
+        .merge(ed_lookup, on="edition_id", how="inner")
+    )
+    author_orders_by_id = (
+        author_appearances.groupby("author_id")["edition_order"].apply(set).to_dict()
+    )
+    author_groups_by_id = (
+        author_appearances.groupby("author_id")
+        .apply(
+            lambda grp: dict(
+                zip(
+                    grp["edition_order"].astype(int),
+                    grp["entry_group"],
+                    strict=False,
+                )
+            ),
+            include_groups=False,
+        )
+        .to_dict()
+    )
 
     rows = []
     for _, work in works[works["subsequent_count"] > 0].iterrows():
         work_id = work["work_id"]
         author_ids = authors_by_work.get(work_id, set())
-        author_returned = any(bool(author_reselected.get(aid, False)) for aid in author_ids)
+        debut_order = int(work["debut_order"])
+        debut_group = work["debut_group"]
+        author_returned = any(
+            any(int(order) > debut_order for order in author_orders_by_id.get(aid, set()))
+            for aid in author_ids
+        )
+        author_returned_cross_series = any(
+            any(
+                int(order) > debut_order
+                and author_groups_by_id.get(aid, {}).get(int(order)) != debut_group
+                for order in author_orders_by_id.get(aid, set())
+            )
+            for aid in author_ids
+        )
         work_returned = bool(work["is_reselected"])
+        work_returned_cross_series = bool(work["is_reselected_cross_series"])
 
         if work_returned and author_returned:
             outcome = "author_and_work"
@@ -517,14 +566,77 @@ def build_debut_work_author_outcomes(
             {
                 "work_id": work_id,
                 "debut_year": work["debut_year"],
+                "debut_order": debut_order,
+                "debut_group": debut_group,
                 "n_authors": len(author_ids),
                 "work_reselected": work_returned,
                 "any_author_reselected": author_returned,
+                "work_reselected_cross_series": work_returned_cross_series,
+                "any_author_reselected_cross_series": author_returned_cross_series,
                 "outcome": outcome,
             }
         )
 
     return pd.DataFrame(rows)
+
+
+def _paired_summary_row(
+    outcomes: pd.DataFrame, metric: str, author_col: str, work_col: str
+) -> dict:
+    if outcomes.empty:
+        return {
+            "metric": metric,
+            "paired_author_and_work": 0,
+            "paired_author_only": 0,
+            "paired_work_only": 0,
+            "paired_neither": 0,
+            "mcnemar_stat": float("nan"),
+            "mcnemar_p": float("nan"),
+        }
+
+    author = outcomes[author_col].astype(bool)
+    work = outcomes[work_col].astype(bool)
+    both = int((author & work).sum())
+    author_only = int((author & ~work).sum())
+    work_only = int((~author & work).sum())
+    neither = int((~author & ~work).sum())
+    table = [[both, author_only], [work_only, neither]]
+    try:
+        result = mcnemar(table, exact=True)
+        stat = float(result.statistic)
+        p_value = float(result.pvalue)
+    except ValueError:
+        stat = float("nan")
+        p_value = float("nan")
+
+    return {
+        "metric": metric,
+        "paired_author_and_work": both,
+        "paired_author_only": author_only,
+        "paired_work_only": work_only,
+        "paired_neither": neither,
+        "mcnemar_stat": stat,
+        "mcnemar_p": p_value,
+    }
+
+
+def build_paired_summary(outcomes: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            _paired_summary_row(
+                outcomes,
+                "paired_all",
+                "any_author_reselected",
+                "work_reselected",
+            ),
+            _paired_summary_row(
+                outcomes,
+                "paired_cross_series",
+                "any_author_reselected_cross_series",
+                "work_reselected_cross_series",
+            ),
+        ]
+    )
 
 
 def print_paired_outcomes(outcomes: pd.DataFrame) -> None:
@@ -538,6 +650,12 @@ def print_paired_outcomes(outcomes: pd.DataFrame) -> None:
     print("  Debut work / debut author paired outcomes:")
     for outcome, count in counts.items():
         print(f"    {outcome:<16} {int(count):5d}  {fmt_pct(count / total)}")
+    for _, row in build_paired_summary(outcomes).iterrows():
+        print(
+            f"    {row['metric']:<16} McNemar p={fmt_p(row['mcnemar_p'])}  "
+            f"author-only={int(row['paired_author_only'])}  "
+            f"work-only={int(row['paired_work_only'])}"
+        )
     print()
 
 
@@ -651,11 +769,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Compare reselection rates of author debuts vs work debuts."
     )
-    parser.add_argument(
-        "--only-root-works",
-        action="store_true",
-        help="Exclude excerpts/selections (works with a parent work).",
-    )
+    add_root_works_flag(parser)
     parser.add_argument(
         "--save-csv",
         action="store_true",
@@ -675,13 +789,16 @@ def main() -> None:
     summary = build_summary(works, authors)
     ts = build_timeseries(works, authors)
     paired = build_debut_work_author_outcomes(raw, works, authors)
+    paired_summary = build_paired_summary(paired)
 
     print_summary(summary, works, authors)
     print_paired_outcomes(paired)
 
     if args.save_csv:
         ts.to_csv(OUT_TS_CSV, index=False)
-        summary.to_csv(OUT_SUMMARY_CSV, index=False)
+        pd.concat([summary, paired_summary], ignore_index=True, sort=False).to_csv(
+            OUT_SUMMARY_CSV, index=False
+        )
         paired.to_csv(OUT_PAIRED_CSV, index=False)
         print(f"  Time-series CSV saved -> {OUT_TS_CSV}")
         print(f"  Summary CSV saved -> {OUT_SUMMARY_CSV}")

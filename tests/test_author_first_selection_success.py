@@ -153,6 +153,8 @@ def test_tiebreak_smallest_edition_key_alphabetically():
     # "aaa" < "zzz" alphabetically
     assert row["debut_edition_key"] == "aaa"
     assert row["debut_year"] == 1990
+    assert row["subsequent_count"] == 2
+    assert row["reselection_count"] == 2
 
 
 def test_tiebreak_shared_and_unique_authors():
