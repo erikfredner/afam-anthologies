@@ -11,6 +11,8 @@ SELECT DISTINCT
     w.id          AS work_id,
     e.id          AS edition_id,
     e."year"      AS anthology_publication_year,
+    e.series_id,
+    e.edition_number,
     w.parent_id,
     a.id          AS author_id,
     a.birth_year  AS author_birth_year
