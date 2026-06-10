@@ -9,6 +9,7 @@ dependencies = [
     "matplotlib>=3.10.1",
     "networkx>=3.4.2",
     "pandas>=2.2.3",
+    "plotly>=6.8.0",
     "psycopg[binary]>=3.3.4",
     "python-dotenv>=1.2.2",
     "scikit-learn>=1.6.1",
