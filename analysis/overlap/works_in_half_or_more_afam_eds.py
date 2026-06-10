@@ -5,8 +5,9 @@ Lists works appearing in at least half of all African American literary
 anthology editions, queried live from the database.
 
 Output columns:
-  Work        — '"Title" by Author'
-  Anthologies — number of distinct editions that selected the work
+  Work         — '"Title" by Author'
+  Selections   — number of distinct editions that selected the work
+  Reselections — later selections / later opportunities
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import pandas as pd
 
 from afam import DATA_DIR
 from afam.db import query
+from afam.names import author_sort_key
 from afam.sql import query_path
 
 OUT_CSV = DATA_DIR / "works_in_half_or_more_afam_eds.csv"
@@ -31,19 +33,34 @@ def join_authors(names: pd.Series) -> str:
     return ", ".join(unique[:-1]) + f", and {unique[-1]}"
 
 
+def format_reselections(row: pd.Series) -> str:
+    selections = row["reselection_count"]
+    opportunities = row["opportunities"]
+    return f"{int(selections)}/{int(opportunities)}"
+
+
 def build_table(df: pd.DataFrame) -> pd.DataFrame:
     grouped = (
         df.groupby(["work_id", "work_title", "edition_count"], sort=False)
-        .agg(author_name=("author_name", join_authors))
+        .agg(
+            author_name=("author_name", join_authors),
+            reselection_count=("reselection_count", "first"),
+            opportunities=("opportunities", "first"),
+            reselection_rate=("reselection_rate", "first"),
+        )
         .reset_index()
     )
-    grouped = grouped.sort_values(
-        ["edition_count", "author_name", "work_title"],
-        ascending=[False, True, True],
+    grouped = (
+        grouped.assign(author_sort_key=grouped["author_name"].map(author_sort_key))
+        .sort_values(
+            ["edition_count", "author_sort_key", "work_title"],
+            ascending=[False, True, True],
+        )
     )
     result = pd.DataFrame({
-        "Work":        grouped.apply(lambda r: f'"{r["work_title"]}" by {r["author_name"]}', axis=1),
-        "Anthologies": grouped["edition_count"],
+        "Work":         grouped.apply(lambda r: f'"{r["work_title"]}" by {r["author_name"]}', axis=1),
+        "Selections":   grouped["edition_count"],
+        "Reselections": grouped.apply(format_reselections, axis=1),
     })
     return result.reset_index(drop=True)
 

@@ -5,8 +5,9 @@ Lists authors appearing in at least half of all African American literary
 anthology editions, queried live from the database.
 
 Output columns:
-  Author      — "Name (b. YYYY)" or "Name" when birth year is unknown
-  Anthologies — number of distinct editions that selected the author
+  Author       — author name
+  Selections   — number of distinct editions that selected the author
+  Reselections — later selections / later opportunities
 """
 
 from __future__ import annotations
@@ -17,24 +18,30 @@ import pandas as pd
 
 from afam import DATA_DIR
 from afam.db import query
+from afam.names import author_sort_key
 from afam.sql import query_path
 
 OUT_CSV = DATA_DIR / "authors_in_half_or_more_afam_eds.csv"
 
 
-def format_author(name: str, birth_year) -> str:
-    if birth_year and str(birth_year).strip() and not (
-        isinstance(birth_year, float) and birth_year != birth_year  # NaN check
-    ):
-        return f"{name} (b. {int(birth_year)})"
-    return name
+def format_reselections(row: pd.Series) -> str:
+    selections = row["reselection_count"]
+    opportunities = row["opportunities"]
+    return f"{int(selections)}/{int(opportunities)}"
 
 
 def build_table(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.sort_values(["edition_count", "birth_year"], ascending=[False, True], na_position="last")
+    df = (
+        df.assign(author_sort_key=df["author_name"].map(author_sort_key))
+        .sort_values(
+            ["edition_count", "author_sort_key"],
+            ascending=[False, True],
+        )
+    )
     result = pd.DataFrame({
-        "Author":      df.apply(lambda r: format_author(r["author_name"], r["birth_year"]), axis=1),
-        "Anthologies": df["edition_count"],
+        "Author":       df["author_name"],
+        "Selections":   df["edition_count"],
+        "Reselections": df.apply(format_reselections, axis=1),
     })
     return result.reset_index(drop=True)
 

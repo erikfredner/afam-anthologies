@@ -1,5 +1,5 @@
 WITH tagged_editions AS (
-    SELECT DISTINCT e.id
+    SELECT DISTINCT e.id, e."year"
     FROM data_edition e
     JOIN data_edition_literary_traditions elt
       ON elt.edition_id = e.id
@@ -15,6 +15,7 @@ work_edition_counts AS (
     SELECT
         w.id AS work_id,
         w.title AS work_title,
+        MIN(te."year") AS debut_year,
         COUNT(DISTINCT e.id) AS edition_count
     FROM data_work w
     JOIN data_workinanthology wia
@@ -27,6 +28,37 @@ work_edition_counts AS (
       ON te.id = e.id
     GROUP BY w.id, w.title
 ),
+work_reselection_stats AS (
+    SELECT
+        wec.*,
+        COUNT(DISTINCT e.id) FILTER (
+            WHERE te."year" > wec.debut_year
+        ) AS reselection_count,
+        opp.opportunities,
+        COUNT(DISTINCT e.id) FILTER (
+            WHERE te."year" > wec.debut_year
+        )::float / NULLIF(opp.opportunities, 0) AS reselection_rate
+    FROM work_edition_counts wec
+    JOIN data_workinanthology wia
+      ON wia.work_id = wec.work_id
+    JOIN data_volume v
+      ON v.id = wia.volume_id
+    JOIN data_edition e
+      ON e.id = v.edition_id
+    JOIN tagged_editions te
+      ON te.id = e.id
+    CROSS JOIN LATERAL (
+        SELECT COUNT(*) AS opportunities
+        FROM tagged_editions later_te
+        WHERE later_te."year" > wec.debut_year
+    ) opp
+    GROUP BY
+        wec.work_id,
+        wec.work_title,
+        wec.debut_year,
+        wec.edition_count,
+        opp.opportunities
+),
 work_authors AS (
     SELECT
         wa.work_id,
@@ -36,13 +68,16 @@ work_authors AS (
       ON a.id = wa.author_id
 )
 SELECT
-    wec.work_id,
-    wec.work_title,
+    wrs.work_id,
+    wrs.work_title,
     wa.author_name,
-    wec.edition_count
-FROM work_edition_counts wec
+    wrs.edition_count,
+    wrs.reselection_count,
+    wrs.opportunities,
+    wrs.reselection_rate
+FROM work_reselection_stats wrs
 JOIN work_authors wa
-  ON wa.work_id = wec.work_id
+  ON wa.work_id = wrs.work_id
 CROSS JOIN total_tagged_editions tte
-WHERE wec.edition_count * 2 >= tte.total_editions
-ORDER BY wec.edition_count DESC, wec.work_title, wa.author_name;
+WHERE wrs.edition_count * 2 >= tte.total_editions
+ORDER BY wrs.edition_count DESC, wrs.work_title, wa.author_name;
