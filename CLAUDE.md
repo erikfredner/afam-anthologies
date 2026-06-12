@@ -92,9 +92,9 @@ Each script writes its PNG/PDF to `output/`.
 |---|---|---|
 | `heatmaps/` | `anthology_overlap_heatmap`, `author_overlap_heatmap`, `author_work_ratio_heatmap`, `author_work_shared_scatter` | Pairwise overlap matrices between editions |
 | `networks/` | `anthology_network`, `work_network` | Bipartite co-occurrence graphs (require `--csv`) |
-| `reselection/` | `reselection_probability`, `work_reselection_probability`, `gender_reselection`, `cumulative_pairwise_agreement`, `series_pair_reselection`, `author_selection_spread`, `author_page_share_reselection`, `retention_from_1929`, `retention_from_1941`, `first_selection_success` | Per-author/work reselection and retention trends |
+| `reselection/` | `reselection_probability`, `work_reselection_probability`, `gender_reselection`, `cumulative_pairwise_agreement`, `series_pair_reselection`, `author_selection_spread`, `author_page_share_reselection`, `retention_from_1929`, `retention_from_1941`, `first_selection_success`, `continuation_probability`, `edition_pair_retention_scatter`, `debut_reselection_forest` | Per-author/work reselection and retention trends |
 | `predictability/` | `predictability_over_time`, `predictability_repeat_focus`, `predictability_new_focus`, `naaal1996_prior_selection` | Visualizations of predictability metrics and logistic-model curves |
-| `inequality/` | `inclusion_inequality`, `work_selection_divergence`, `selection_frequency_decay` | Frequency distributions, divergence, survival curves |
+| `inequality/` | `inclusion_inequality`, `work_selection_divergence`, `selection_frequency_decay`, `selection_frequency_distribution` | Frequency distributions, divergence, survival curves |
 | `influence/` | `anthology_influence_lift` | Dumbbell chart ranking editions by influence lift on subsequent editions |
 | `misc/` | `canonical_author_map`, `form_by_edition` | One-off canonical-author and literary-form visualizations |
 
