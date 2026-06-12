@@ -84,6 +84,7 @@ def test_work_table_includes_reselection_rate_after_grouping_authors() -> None:
                 "work_title": "A Work",
                 "author_name": "Author One",
                 "edition_count": 3,
+                "coalesced_edition_count": 5,
                 "reselection_count": 2,
                 "opportunities": 4,
                 "reselection_rate": 0.5,
@@ -93,6 +94,7 @@ def test_work_table_includes_reselection_rate_after_grouping_authors() -> None:
                 "work_title": "A Work",
                 "author_name": "Author Two",
                 "edition_count": 3,
+                "coalesced_edition_count": 5,
                 "reselection_count": 2,
                 "opportunities": 4,
                 "reselection_rate": 0.5,
@@ -102,10 +104,33 @@ def test_work_table_includes_reselection_rate_after_grouping_authors() -> None:
 
     table = build_work_table(raw)
 
-    assert table.columns.tolist() == ["Work", "Selections", "Reselections"]
+    assert table.columns.tolist() == ["Work", "Selections", "Coalesced", "Reselections"]
     assert table.loc[0, "Work"] == '"A Work" by Author One and Author Two'
     assert table.loc[0, "Selections"] == 3
+    assert table.loc[0, "Coalesced"] == 5
     assert table.loc[0, "Reselections"] == "2/4"
+
+
+def test_work_table_credits_authorless_works_to_anonymous() -> None:
+    raw = pd.DataFrame(
+        [
+            {
+                "work_id": "w1",
+                "work_title": "Steal Away to Jesus",
+                "author_name": None,
+                "edition_count": 14,
+                "coalesced_edition_count": 14,
+                "reselection_count": 13,
+                "opportunities": 25,
+                "reselection_rate": 0.52,
+            }
+        ]
+    )
+
+    table = build_work_table(raw)
+
+    assert len(table) == 1
+    assert table.loc[0, "Work"] == '"Steal Away to Jesus" by Anonymous'
 
 
 def test_work_table_sorts_ties_by_author_last_name() -> None:
@@ -116,6 +141,7 @@ def test_work_table_sorts_ties_by_author_last_name() -> None:
                 "work_title": "Work by Dunbar",
                 "author_name": "Paul Laurence Dunbar",
                 "edition_count": 3,
+                "coalesced_edition_count": 3,
                 "reselection_count": 2,
                 "opportunities": 4,
                 "reselection_rate": 0.5,
@@ -125,6 +151,7 @@ def test_work_table_sorts_ties_by_author_last_name() -> None:
                 "work_title": "Work by Du Bois",
                 "author_name": "W. E. B. Du Bois",
                 "edition_count": 3,
+                "coalesced_edition_count": 3,
                 "reselection_count": 2,
                 "opportunities": 4,
                 "reselection_rate": 0.5,

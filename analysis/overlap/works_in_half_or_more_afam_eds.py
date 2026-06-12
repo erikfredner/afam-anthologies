@@ -5,8 +5,10 @@ Lists works appearing in at least half of all African American literary
 anthology editions, queried live from the database.
 
 Output columns:
-  Work         — '"Title" by Author'
+  Work         — '"Title" by Author' (authorless works are credited to Anonymous)
   Selections   — number of distinct editions that selected the work
+  Coalesced    — distinct editions selecting the work's family (its root work
+                 plus all excerpts of that root, via COALESCE(parent_id, id))
   Reselections — later selections / later opportunities
 """
 
@@ -25,7 +27,9 @@ OUT_CSV = DATA_DIR / "works_in_half_or_more_afam_eds.csv"
 
 
 def join_authors(names: pd.Series) -> str:
-    unique = list(dict.fromkeys(names))
+    unique = list(dict.fromkeys(n for n in names if pd.notna(n)))
+    if not unique:
+        return "Anonymous"
     if len(unique) == 1:
         return unique[0]
     if len(unique) == 2:
@@ -44,6 +48,7 @@ def build_table(df: pd.DataFrame) -> pd.DataFrame:
         df.groupby(["work_id", "work_title", "edition_count"], sort=False)
         .agg(
             author_name=("author_name", join_authors),
+            coalesced_edition_count=("coalesced_edition_count", "first"),
             reselection_count=("reselection_count", "first"),
             opportunities=("opportunities", "first"),
             reselection_rate=("reselection_rate", "first"),
@@ -60,6 +65,7 @@ def build_table(df: pd.DataFrame) -> pd.DataFrame:
     result = pd.DataFrame({
         "Work":         grouped.apply(lambda r: f'"{r["work_title"]}" by {r["author_name"]}', axis=1),
         "Selections":   grouped["edition_count"],
+        "Coalesced":    grouped["coalesced_edition_count"],
         "Reselections": grouped.apply(format_reselections, axis=1),
     })
     return result.reset_index(drop=True)
