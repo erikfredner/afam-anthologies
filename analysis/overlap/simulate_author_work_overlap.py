@@ -16,7 +16,7 @@ Per-edition eligible pools use real anthology publication years. Authors and
 works first observed after the simulated anthology's publication year are not
 eligible for that simulation.
 
-Produces a figure (viz/author_work_overlap_simulation.png) overlaying real
+Produces a figure (output/author_work_overlap_simulation.png) overlaying real
 pairs on the simulated (shared_authors, shared_works) distribution.
 
 By default only cross-series pairs are included (matching anthology_overlap_heatmap.py
@@ -328,7 +328,7 @@ def sample_simulated_edition(
             duplicate_slots_needed,
         )
         if assignments is None:
-            break
+            continue
         author_work_ids = _assign_author_works_exact(
             assignments, target.authored_work_count, rng
         )
@@ -412,12 +412,12 @@ def plot_figure(
 
     ax.scatter(
         sim_x, sim_y, s=norm_size,
-        color="steelblue", alpha=0.5, linewidths=0,
-        label="Simulated (bubble area ∝ frequency)",
+        color="0.65", alpha=0.5, linewidths=0,
+        label="Simulated pairs (area ∝ frequency)",
     )
     ax.scatter(
         real_x, real_y, s=50,
-        color="firebrick", zorder=4, linewidths=0,
+        color="black", zorder=4, linewidths=0,
         label="Real pairs",
     )
 
