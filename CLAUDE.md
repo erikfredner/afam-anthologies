@@ -80,6 +80,7 @@ Scripts that print to stdout or write CSVs to `data/`.
 | `overlap/` | `overlap_naaal_1996`, `simulate_author_work_overlap`, `half_or_more_sentences`, `authors_in_half_or_more_afam_eds`, `works_in_half_or_more_afam_eds`, `per_author_work_overlap` | Author/work overlap counts and Monte Carlo simulations |
 | `reselection/` | `reselection_vs_chance`, `new_selection_reselection_probability`, `author_first_selection_success`, `author_vs_work_debut_reselection`, `post_debut_performance`, `authors_without_frequent_works` | Debut reselection rates and post-debut retention |
 | `predictability/` | `logistic_reselection`, `freq_bucket_predictability`, `predictability_over_time`, `predictability_new_focus_per_edition`, `simulate_naaal1996_selection`, `simulate_naaal2025_selection`, `work_selection_probability_model` | Logistic regression and predictability metrics for NAAAL inclusion |
+| `influence/` | `anthology_influence` | Per-edition influence on subsequent editions: forward pickup rate of each edition's selections (all and debuts-only) vs. corpus baseline |
 | `gender/` | `women_author_gaps`, `author_gender_summary` | Gender-gap analyses |
 | `summaries/` | `most_anthologized`, `works_without_authors_naal_naaal`, `count_anthologies`, `count_works`, `edition_stats`, `edition_summary`, `format_author_anthology_counts`, `format_work_anthology_counts`, `author_never_cut`, `compare_series_authors`, `naal_exclusive_authors`, `naal_exclusive_works`, `list_reselected_works` | Counts, formatted tables, exclusivity lists |
 
@@ -94,6 +95,7 @@ Each script writes its PNG/PDF to `output/`.
 | `reselection/` | `reselection_probability`, `work_reselection_probability`, `gender_reselection`, `cumulative_pairwise_agreement`, `series_pair_reselection`, `author_selection_spread`, `author_page_share_reselection`, `retention_from_1929`, `retention_from_1941`, `first_selection_success` | Per-author/work reselection and retention trends |
 | `predictability/` | `predictability_over_time`, `predictability_repeat_focus`, `predictability_new_focus`, `naaal1996_prior_selection` | Visualizations of predictability metrics and logistic-model curves |
 | `inequality/` | `inclusion_inequality`, `work_selection_divergence`, `selection_frequency_decay` | Frequency distributions, divergence, survival curves |
+| `influence/` | `anthology_influence_lift` | Dumbbell chart ranking editions by influence lift on subsequent editions |
 | `misc/` | `canonical_author_map`, `form_by_edition` | One-off canonical-author and literary-form visualizations |
 
 ## `tests/`
