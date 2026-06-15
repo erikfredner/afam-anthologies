@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -29,13 +30,17 @@ import pandas as pd
 
 from afam.cli import add_root_works_flag
 from afam.editions import EDITION_LABELS
-from afam.viz_style import AUTHOR_COLOR, OUTPUT_DIR
+from afam.viz_style import OUTPUT_DIR
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "analysis" / "reselection"))
 from author_vs_work_debut_reselection import load_data  # noqa: E402
 
 OUT_FILE = OUTPUT_DIR / "edition_pair_retention_scatter.png"
 GRID_KW = dict(alpha=0.25, linestyle=":")
+POINT_COLOR = "black"
+
+X_AXIS_LABEL = "← fewer works reselected          more works reselected →   (%)"
+Y_AXIS_LABEL = "← fewer authors reselected          more authors reselected →   (%)"
 
 # Corner pairs to call out: nearest point to each (work, author) retention
 # target, with the text offset (points) used to keep labels out of the cloud.
@@ -45,6 +50,11 @@ CALLOUT_TARGETS: list[tuple[tuple[float, float], tuple[float, float]]] = [
     ((1.0, 1.0), (-12, 8)),
     ((1.0, 0.0), (12, -22)),
 ]
+
+# Mathtext special characters that must be escaped to render literally.
+_MATHTEXT_SPECIAL = "\\#$%&_{}~^"
+# Trailing edition designator (e.g. "ed.2") kept upright, outside the italics.
+_ED_SUFFIX = re.compile(r"\s+(ed\.\d+)$")
 
 
 def _entity_sets(df: pd.DataFrame, id_col: str) -> dict[object, set]:
@@ -103,10 +113,30 @@ def nearest_pair_index(pairs: pd.DataFrame, target: tuple[float, float]) -> int:
     return int(dist2.idxmin())
 
 
+def _italic_label(label: str) -> str:
+    """Render an edition label with its anthology title in mathtext italics.
+
+    A trailing edition designator (e.g. "ed.2") is kept upright outside the
+    italics so it reads like a citation: $NAAAL$ ed.2.
+    """
+    match = _ED_SUFFIX.search(label)
+    title = label[: match.start()] if match else label
+    suffix = f" {match.group(1)}" if match else ""
+    # U+2010 renders as an ordinary glyph; a plain "-" becomes a spaced minus.
+    title = title.replace("-", "‐")
+    escaped = "".join(
+        f"\\{ch}" if ch in _MATHTEXT_SPECIAL else ch for ch in title
+    ).replace(" ", r"\ ")
+    return rf"$\mathit{{{escaped}}}$" + suffix
+
+
 def _pair_label(row: pd.Series) -> str:
     earlier = EDITION_LABELS.get(int(row["earlier_edition_id"]), "?")
     later = EDITION_LABELS.get(int(row["later_edition_id"]), "?")
-    return f"{earlier} ({row['earlier_year']}) →\n{later} ({row['later_year']})"
+    return (
+        f"{_italic_label(earlier)} ({row['earlier_year']}) →\n"
+        f"{_italic_label(later)} ({row['later_year']})"
+    )
 
 
 def plot(pairs: pd.DataFrame, out: Path) -> None:
@@ -118,7 +148,7 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
     ax.scatter(
         100 * cross["work_retention"],
         100 * cross["author_retention"],
-        color=AUTHOR_COLOR,
+        color=POINT_COLOR,
         marker="o",
         s=28,
         alpha=0.55,
@@ -129,7 +159,7 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
         100 * same["work_retention"],
         100 * same["author_retention"],
         facecolors="none",
-        edgecolors=AUTHOR_COLOR,
+        edgecolors=POINT_COLOR,
         marker="s",
         s=34,
         alpha=0.9,
@@ -160,12 +190,12 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
         rotation_mode="anchor",
     )
 
-    seen: set[int] = set()
-    for target, offset in CALLOUT_TARGETS:
-        idx = nearest_pair_index(pairs, target)
-        if idx in seen:
-            continue
-        seen.add(idx)
+    annotated: set[int] = set()
+
+    def _callout(idx: int, offset: tuple[float, float]) -> None:
+        if idx in annotated:
+            return
+        annotated.add(idx)
         row = pairs.loc[idx]
         ax.annotate(
             _pair_label(row),
@@ -181,25 +211,18 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
             zorder=4,
         )
 
-    above_all, n_all = _above_share(pairs)
-    above_cross, n_cross = _above_share(cross)
-    ax.text(
-        0.03,
-        0.97,
-        f"Authors retained at a higher rate than works in\n"
-        f"{above_all} of {n_all} edition pairs ({100 * above_all / n_all:.1f}%); "
-        f"{above_cross} of {n_cross} cross-series ({100 * above_cross / n_cross:.1f}%)",
-        transform=ax.transAxes,
-        fontsize=9,
-        va="top",
-    )
+    # Pairs nearest each corner of the retention square.
+    for target, offset in CALLOUT_TARGETS:
+        _callout(nearest_pair_index(pairs, target), offset)
+
+    # The cross-series pair with the highest work retention (x value).
+    if not cross.empty:
+        _callout(int(cross["work_retention"].idxmax()), (-15, 12))
 
     ax.set_xlim(-2, lim)
     ax.set_ylim(-2, lim)
-    ax.set_xlabel("% of earlier edition's works selected by later edition", fontsize=11)
-    ax.set_ylabel(
-        "% of earlier edition's authors selected by later edition", fontsize=11
-    )
+    ax.set_xlabel(X_AXIS_LABEL, fontsize=11)
+    ax.set_ylabel(Y_AXIS_LABEL, fontsize=11)
     ax.set_title("Author vs. work retention across all edition pairs", fontsize=12)
     ax.legend(frameon=False, fontsize=9, loc="lower right")
     ax.grid(True, **GRID_KW)
