@@ -80,6 +80,7 @@ Scripts that print to stdout or write CSVs to `data/`.
 |---|---|---|
 | `overlap/` | `overlap_naaal_1996`, `simulate_author_work_overlap`, `half_or_more_sentences`, `authors_in_half_or_more_afam_eds`, `works_in_half_or_more_afam_eds`, `half_or_more_summary`, `per_author_work_overlap`, `author_disagreement` | Author/work overlap counts, Monte Carlo simulations, and multi-metric author-disagreement verdicts |
 | `reselection/` | `reselection_vs_chance`, `new_selection_reselection_probability`, `author_first_selection_success`, `author_vs_work_debut_reselection`, `post_debut_performance`, `authors_without_frequent_works`, `early_selection_dropouts`, `work_pool_dilution` | Debut reselection rates, post-debut retention, early-dropout and work-pool-dilution analyses |
+| `concentration/` | `author_form_concentration` | Page-weighted and count-weighted per-author-per-form concentration across selected works |
 | `predictability/` | `logistic_reselection`, `freq_bucket_predictability`, `predictability_over_time`, `predictability_new_focus_per_edition`, `simulate_naaal1996_selection`, `simulate_naaal2025_selection`, `work_selection_probability_model` | Logistic regression and predictability metrics for NAAAL inclusion |
 | `influence/` | `anthology_influence` | Per-edition influence on subsequent editions: forward pickup rate of each edition's selections (all and debuts-only) vs. corpus baseline |
 | `gender/` | `women_author_gaps`, `author_gender_summary` | Gender-gap analyses |

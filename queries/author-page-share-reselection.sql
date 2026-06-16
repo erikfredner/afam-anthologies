@@ -2,8 +2,9 @@
 -- record in editions tagged "African-American Literature".  Carries the page
 -- columns needed for span computation (toc_page → toc_next, plus volume
 -- first_toc_page / last_toc_page as a fallback), the work's parent_id for
--- root-vs-excerpt filtering, the author's name for labeling, and the form
--- name (LEFT JOIN — works without a form keep one row with NULL form).
+-- root-vs-excerpt filtering, the work title for signature-work labels, the
+-- author's name for labeling, and the form name (LEFT JOIN — works without a
+-- form keep one row with NULL form).
 --
 -- Multi-author works produce one row per author; multi-form works produce one
 -- row per form; multi-volume editions one row per volume.  Deduplicate
@@ -19,6 +20,7 @@ WITH tagged_editions AS (
 )
 SELECT
     w.id              AS work_id,
+    w.title           AS work_title,
     w.parent_id       AS parent_id,
     v.id              AS volume_id,
     e.id              AS edition_id,
