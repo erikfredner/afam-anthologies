@@ -45,10 +45,30 @@ def test_two_anthologies_basic():
     Author C: only in ant2 → subsequent_count=0, prob=NaN, ever=NaN
     """
     rows = [
-        {"anthology_id": "ant1", "anthology_title": "First Anth", "publication_year": "2000", "author_id": "A"},
-        {"anthology_id": "ant1", "anthology_title": "First Anth", "publication_year": "2000", "author_id": "B"},
-        {"anthology_id": "ant2", "anthology_title": "Second Anth", "publication_year": "2010", "author_id": "B"},
-        {"anthology_id": "ant2", "anthology_title": "Second Anth", "publication_year": "2010", "author_id": "C"},
+        {
+            "anthology_id": "ant1",
+            "anthology_title": "First Anth",
+            "publication_year": "2000",
+            "author_id": "A",
+        },
+        {
+            "anthology_id": "ant1",
+            "anthology_title": "First Anth",
+            "publication_year": "2000",
+            "author_id": "B",
+        },
+        {
+            "anthology_id": "ant2",
+            "anthology_title": "Second Anth",
+            "publication_year": "2010",
+            "author_id": "B",
+        },
+        {
+            "anthology_id": "ant2",
+            "anthology_title": "Second Anth",
+            "publication_year": "2010",
+            "author_id": "C",
+        },
     ]
     detail, edition = compute(make_df(rows))
 
@@ -83,10 +103,30 @@ def test_three_anthologies_varied_probs():
     Author R: debuts in ant3 (2010), no subsequent → NaN
     """
     rows = [
-        {"anthology_id": "ant1", "anthology_title": "Anth 1", "publication_year": "2000", "author_id": "P"},
-        {"anthology_id": "ant2", "anthology_title": "Anth 2", "publication_year": "2005", "author_id": "Q"},
-        {"anthology_id": "ant3", "anthology_title": "Anth 3", "publication_year": "2010", "author_id": "P"},
-        {"anthology_id": "ant3", "anthology_title": "Anth 3", "publication_year": "2010", "author_id": "R"},
+        {
+            "anthology_id": "ant1",
+            "anthology_title": "Anth 1",
+            "publication_year": "2000",
+            "author_id": "P",
+        },
+        {
+            "anthology_id": "ant2",
+            "anthology_title": "Anth 2",
+            "publication_year": "2005",
+            "author_id": "Q",
+        },
+        {
+            "anthology_id": "ant3",
+            "anthology_title": "Anth 3",
+            "publication_year": "2010",
+            "author_id": "P",
+        },
+        {
+            "anthology_id": "ant3",
+            "anthology_title": "Anth 3",
+            "publication_year": "2010",
+            "author_id": "R",
+        },
     ]
     detail, _ = compute(make_df(rows))
     by_author = detail.set_index("author_id")
@@ -114,14 +154,28 @@ def test_multivol_dedup():
     → one row in detail output per author.
     """
     rows = [
-        {"anthology_id": "vol1", "anthology_title": "Big Anth, Vol. 1",
-         "series": "BigSeries", "edition_number": "1",
-         "publication_year": "2000", "author_id": "X"},
-        {"anthology_id": "vol2", "anthology_title": "Big Anth, Vol. 2",
-         "series": "BigSeries", "edition_number": "1",
-         "publication_year": "2000", "author_id": "X"},
-        {"anthology_id": "ant2", "anthology_title": "Later Anth",
-         "publication_year": "2010", "author_id": "X"},
+        {
+            "anthology_id": "vol1",
+            "anthology_title": "Big Anth, Vol. 1",
+            "series": "BigSeries",
+            "edition_number": "1",
+            "publication_year": "2000",
+            "author_id": "X",
+        },
+        {
+            "anthology_id": "vol2",
+            "anthology_title": "Big Anth, Vol. 2",
+            "series": "BigSeries",
+            "edition_number": "1",
+            "publication_year": "2000",
+            "author_id": "X",
+        },
+        {
+            "anthology_id": "ant2",
+            "anthology_title": "Later Anth",
+            "publication_year": "2010",
+            "author_id": "X",
+        },
     ]
     detail, _ = compute(make_df(rows))
 
@@ -141,12 +195,24 @@ def test_tiebreak_smallest_edition_key_alphabetically():
     Two editions in the same year — author in both gets debut at smaller edition_key.
     """
     rows = [
-        {"anthology_id": "aaa", "anthology_title": "Anth AAA",
-         "publication_year": "1990", "author_id": "Z"},
-        {"anthology_id": "zzz", "anthology_title": "Anth ZZZ",
-         "publication_year": "1990", "author_id": "Z"},
-        {"anthology_id": "later", "anthology_title": "Later Anth",
-         "publication_year": "2000", "author_id": "Z"},
+        {
+            "anthology_id": "aaa",
+            "anthology_title": "Anth AAA",
+            "publication_year": "1990",
+            "author_id": "Z",
+        },
+        {
+            "anthology_id": "zzz",
+            "anthology_title": "Anth ZZZ",
+            "publication_year": "1990",
+            "author_id": "Z",
+        },
+        {
+            "anthology_id": "later",
+            "anthology_title": "Later Anth",
+            "publication_year": "2000",
+            "author_id": "Z",
+        },
     ]
     detail, _ = compute(make_df(rows))
     row = detail[detail["author_id"] == "Z"].iloc[0]
@@ -163,17 +229,37 @@ def test_tiebreak_shared_and_unique_authors():
     Author in both gets debut at smaller edition_key.
     """
     rows = [
-        {"anthology_id": "ant_a", "anthology_title": "Anth A",
-         "publication_year": "2000", "author_id": "shared"},
-        {"anthology_id": "ant_a", "anthology_title": "Anth A",
-         "publication_year": "2000", "author_id": "only_a"},
-        {"anthology_id": "ant_b", "anthology_title": "Anth B",
-         "publication_year": "2000", "author_id": "shared"},
-        {"anthology_id": "ant_b", "anthology_title": "Anth B",
-         "publication_year": "2000", "author_id": "only_b"},
+        {
+            "anthology_id": "ant_a",
+            "anthology_title": "Anth A",
+            "publication_year": "2000",
+            "author_id": "shared",
+        },
+        {
+            "anthology_id": "ant_a",
+            "anthology_title": "Anth A",
+            "publication_year": "2000",
+            "author_id": "only_a",
+        },
+        {
+            "anthology_id": "ant_b",
+            "anthology_title": "Anth B",
+            "publication_year": "2000",
+            "author_id": "shared",
+        },
+        {
+            "anthology_id": "ant_b",
+            "anthology_title": "Anth B",
+            "publication_year": "2000",
+            "author_id": "only_b",
+        },
         # later edition to provide subsequent opportunities
-        {"anthology_id": "later", "anthology_title": "Later",
-         "publication_year": "2010", "author_id": "only_a"},
+        {
+            "anthology_id": "later",
+            "anthology_title": "Later",
+            "publication_year": "2010",
+            "author_id": "only_a",
+        },
     ]
     detail, _ = compute(make_df(rows))
     by_author = detail.set_index("author_id")
@@ -190,10 +276,18 @@ def test_tiebreak_shared_and_unique_authors():
 def test_most_recent_has_no_subsequent():
     """Authors debuting in the last anthology have subsequent_count=0 and prob=NaN."""
     rows = [
-        {"anthology_id": "early", "anthology_title": "Early",
-         "publication_year": "1950", "author_id": "old"},
-        {"anthology_id": "recent", "anthology_title": "Recent",
-         "publication_year": "2020", "author_id": "new"},
+        {
+            "anthology_id": "early",
+            "anthology_title": "Early",
+            "publication_year": "1950",
+            "author_id": "old",
+        },
+        {
+            "anthology_id": "recent",
+            "anthology_title": "Recent",
+            "publication_year": "2020",
+            "author_id": "new",
+        },
     ]
     detail, edition = compute(make_df(rows))
 
@@ -229,14 +323,54 @@ def test_aggregate_correctness():
     Aggregate for ant3: n=1, n_with_subsequent=0, mean_prob=NaN, ever_rate=NaN
     """
     rows = [
-        {"anthology_id": "ant1", "anthology_title": "Anth 1", "publication_year": "2000", "author_id": "A"},
-        {"anthology_id": "ant1", "anthology_title": "Anth 1", "publication_year": "2000", "author_id": "B"},
-        {"anthology_id": "ant2", "anthology_title": "Anth 2", "publication_year": "2005", "author_id": "A"},
-        {"anthology_id": "ant2", "anthology_title": "Anth 2", "publication_year": "2005", "author_id": "C"},
-        {"anthology_id": "ant3", "anthology_title": "Anth 3", "publication_year": "2010", "author_id": "A"},
-        {"anthology_id": "ant3", "anthology_title": "Anth 3", "publication_year": "2010", "author_id": "B"},
-        {"anthology_id": "ant3", "anthology_title": "Anth 3", "publication_year": "2010", "author_id": "C"},
-        {"anthology_id": "ant3", "anthology_title": "Anth 3", "publication_year": "2010", "author_id": "D"},
+        {
+            "anthology_id": "ant1",
+            "anthology_title": "Anth 1",
+            "publication_year": "2000",
+            "author_id": "A",
+        },
+        {
+            "anthology_id": "ant1",
+            "anthology_title": "Anth 1",
+            "publication_year": "2000",
+            "author_id": "B",
+        },
+        {
+            "anthology_id": "ant2",
+            "anthology_title": "Anth 2",
+            "publication_year": "2005",
+            "author_id": "A",
+        },
+        {
+            "anthology_id": "ant2",
+            "anthology_title": "Anth 2",
+            "publication_year": "2005",
+            "author_id": "C",
+        },
+        {
+            "anthology_id": "ant3",
+            "anthology_title": "Anth 3",
+            "publication_year": "2010",
+            "author_id": "A",
+        },
+        {
+            "anthology_id": "ant3",
+            "anthology_title": "Anth 3",
+            "publication_year": "2010",
+            "author_id": "B",
+        },
+        {
+            "anthology_id": "ant3",
+            "anthology_title": "Anth 3",
+            "publication_year": "2010",
+            "author_id": "C",
+        },
+        {
+            "anthology_id": "ant3",
+            "anthology_title": "Anth 3",
+            "publication_year": "2010",
+            "author_id": "D",
+        },
     ]
     detail, edition = compute(make_df(rows))
 
@@ -268,14 +402,27 @@ def test_standalone_and_series_both_included():
     """Standalone (no series) and series-based anthologies are both counted."""
     rows = [
         # Series-based
-        {"anthology_id": "s1", "anthology_title": "Series Anth",
-         "series": "MySeries", "edition_number": "1",
-         "publication_year": "1960", "author_id": "alpha"},
+        {
+            "anthology_id": "s1",
+            "anthology_title": "Series Anth",
+            "series": "MySeries",
+            "edition_number": "1",
+            "publication_year": "1960",
+            "author_id": "alpha",
+        },
         # Standalone
-        {"anthology_id": "standalone", "anthology_title": "Solo Anth",
-         "publication_year": "1970", "author_id": "alpha"},
-        {"anthology_id": "standalone", "anthology_title": "Solo Anth",
-         "publication_year": "1970", "author_id": "beta"},
+        {
+            "anthology_id": "standalone",
+            "anthology_title": "Solo Anth",
+            "publication_year": "1970",
+            "author_id": "alpha",
+        },
+        {
+            "anthology_id": "standalone",
+            "anthology_title": "Solo Anth",
+            "publication_year": "1970",
+            "author_id": "beta",
+        },
     ]
     detail, edition = compute(make_df(rows))
 

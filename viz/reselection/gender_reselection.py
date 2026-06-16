@@ -260,7 +260,9 @@ def print_statistics(opps_df: pd.DataFrame) -> None:
         .reset_index()
     )
 
-    print("\n========== 3×2 Contingency Table (gender × selected) — unadjusted ==========")
+    print(
+        "\n========== 3×2 Contingency Table (gender × selected) — unadjusted =========="
+    )
     print(f"{'Group':<12} {'Selected':>10} {'Not selected':>14} {'Total':>8}")
     for _, row in totals.iterrows():
         total = row["selected"] + row["not_selected"]
@@ -282,8 +284,12 @@ def print_statistics(opps_df: pd.DataFrame) -> None:
         f_not = int(female_row["not_selected"].values[0])
         tbl_2x2 = np.array([[m_sel, m_not], [f_sel, f_not]])
         chi2_mf, p_mf, _, _ = chi2_contingency(tbl_2x2)
-        or_mf = (m_sel * f_not) / (m_not * f_sel) if (m_not * f_sel) > 0 else float("nan")
-        print(f"\nPairwise Male vs Female (unadjusted): χ²={chi2_mf:.3f}, p={p_mf:.4g}, OR={or_mf:.3f}")
+        or_mf = (
+            (m_sel * f_not) / (m_not * f_sel) if (m_not * f_sel) > 0 else float("nan")
+        )
+        print(
+            f"\nPairwise Male vs Female (unadjusted): χ²={chi2_mf:.3f}, p={p_mf:.4g}, OR={or_mf:.3f}"
+        )
 
     # CMH test — controls for within-anthology pool composition
     _cmh_male_female(opps_df)
@@ -294,7 +300,9 @@ def print_statistics(opps_df: pd.DataFrame) -> None:
         "selected ~ C(gender_group) + ek_year =========="
     )
     try:
-        m1 = smf.logit("selected ~ C(gender_group) + ek_year", data=opps_df).fit(disp=False)
+        m1 = smf.logit("selected ~ C(gender_group) + ek_year", data=opps_df).fit(
+            disp=False
+        )
         _print_gender_coefs(m1)
     except Exception as exc:
         print(f"Model 1 failed: {exc}")
@@ -305,9 +313,9 @@ def print_statistics(opps_df: pd.DataFrame) -> None:
         "selected ~ C(gender_group) + C(edition_key) =========="
     )
     try:
-        m2 = smf.logit(
-            "selected ~ C(gender_group) + C(edition_key)", data=opps_df
-        ).fit(disp=False)
+        m2 = smf.logit("selected ~ C(gender_group) + C(edition_key)", data=opps_df).fit(
+            disp=False
+        )
         _print_gender_coefs(m2)
     except Exception as exc:
         print(f"Model 2 failed: {exc}")
@@ -359,7 +367,9 @@ def plot_points(cum_ek: pd.DataFrame, out_path: Path) -> None:
         color = GENDER_COLORS.get(gender, C_GRAY)
         g = grp.sort_values("position").dropna(subset=["cum_rate"])
         ax.plot(g["position"], g["cum_rate"], color=color, linewidth=1.5, alpha=0.5)
-        ax.scatter(g["position"], g["cum_rate"], color=color, s=40, label=gender, zorder=3)
+        ax.scatter(
+            g["position"], g["cum_rate"], color=color, s=40, label=gender, zorder=3
+        )
 
     ax.set_xticks(positions)
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
@@ -383,7 +393,9 @@ def plot_diverging(cum_ek: pd.DataFrame, out_path: Path) -> None:
     positions, labels = _xtick_labels(cum_ek)
 
     male = cum_ek[cum_ek["gender_group"] == "Male"].set_index("position")["cum_rate"]
-    female = cum_ek[cum_ek["gender_group"] == "Female"].set_index("position")["cum_rate"]
+    female = cum_ek[cum_ek["gender_group"] == "Female"].set_index("position")[
+        "cum_rate"
+    ]
 
     diffs = []
     colors = []
@@ -404,7 +416,9 @@ def plot_diverging(cum_ek: pd.DataFrame, out_path: Path) -> None:
     ax.set_xticks(positions)
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
     ax.set_ylabel("Female − Male cumulative reselection rate")
-    ax.set_title("Gender gap in cumulative reselection rate per anthology (Female − Male)")
+    ax.set_title(
+        "Gender gap in cumulative reselection rate per anthology (Female − Male)"
+    )
 
     legend_handles = [
         mpatches.Patch(facecolor=C_RED, label="Female higher"),

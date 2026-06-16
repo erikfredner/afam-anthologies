@@ -25,7 +25,9 @@ def make_long_df(
 
     Each dict must supply: edition_key, ek_year, author_id, norm_title.
     """
-    return pd.DataFrame(rows, columns=["edition_key", "ek_year", "author_id", "norm_title"])
+    return pd.DataFrame(
+        rows, columns=["edition_key", "ek_year", "author_id", "norm_title"]
+    )
 
 
 # ── jaccard ────────────────────────────────────────────────────────────────────
@@ -142,14 +144,44 @@ def test_author_jaccard_gte_work_jaccard():
     # but each picks different works for each author.
     rows = [
         # Edition A
-        {"edition_key": "A", "ek_year": 1, "author_id": "a1", "norm_title": "work_a1_v1"},
-        {"edition_key": "A", "ek_year": 1, "author_id": "a2", "norm_title": "work_a2_v1"},
+        {
+            "edition_key": "A",
+            "ek_year": 1,
+            "author_id": "a1",
+            "norm_title": "work_a1_v1",
+        },
+        {
+            "edition_key": "A",
+            "ek_year": 1,
+            "author_id": "a2",
+            "norm_title": "work_a2_v1",
+        },
         # Edition B
-        {"edition_key": "B", "ek_year": 2, "author_id": "a1", "norm_title": "work_a1_v2"},
-        {"edition_key": "B", "ek_year": 2, "author_id": "a2", "norm_title": "work_a2_v2"},
+        {
+            "edition_key": "B",
+            "ek_year": 2,
+            "author_id": "a1",
+            "norm_title": "work_a1_v2",
+        },
+        {
+            "edition_key": "B",
+            "ek_year": 2,
+            "author_id": "a2",
+            "norm_title": "work_a2_v2",
+        },
         # Edition C
-        {"edition_key": "C", "ek_year": 3, "author_id": "a1", "norm_title": "work_a1_v3"},
-        {"edition_key": "C", "ek_year": 3, "author_id": "a2", "norm_title": "work_a2_v3"},
+        {
+            "edition_key": "C",
+            "ek_year": 3,
+            "author_id": "a1",
+            "norm_title": "work_a1_v3",
+        },
+        {
+            "edition_key": "C",
+            "ek_year": 3,
+            "author_id": "a2",
+            "norm_title": "work_a2_v3",
+        },
     ]
     df = make_long_df(rows)
     snaps = compute_snapshots(df)

@@ -135,7 +135,9 @@ def _prepare_legacy_frame(df_raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def _prepare_frame(df_raw: pd.DataFrame) -> pd.DataFrame:
-    if {"edition_id", "anthology_publication_year", "series_id"}.issubset(df_raw.columns):
+    if {"edition_id", "anthology_publication_year", "series_id"}.issubset(
+        df_raw.columns
+    ):
         return _prepare_db_frame(df_raw)
     return _prepare_legacy_frame(df_raw)
 
@@ -153,9 +155,11 @@ def compute(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     )
 
     # One row per (edition_key, author_id)
-    pairs = df[["edition_key", "author_id", "publication_year"]].drop_duplicates(
-        subset=["edition_key", "author_id"]
-    ).copy()
+    pairs = (
+        df[["edition_key", "author_id", "publication_year"]]
+        .drop_duplicates(subset=["edition_key", "author_id"])
+        .copy()
+    )
 
     all_editions = (
         df[["edition_key", "publication_year", "edition_sort"]]
@@ -173,8 +177,7 @@ def compute(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     debut = (
         sorted_pairs.groupby("author_id", sort=False)
         .first()
-        .reset_index()
-        [["author_id", "edition_key", "edition_year", "edition_order"]]
+        .reset_index()[["author_id", "edition_key", "edition_year", "edition_order"]]
         .rename(
             columns={
                 "edition_key": "debut_edition_key",
@@ -210,20 +213,24 @@ def compute(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
             reselection_prob = reselection_count / subsequent_count
             ever_reselected = 1.0 if reselection_count > 0 else 0.0
 
-        records.append({
-            "debut_edition_key": debut_ek,
-            "debut_year": debut_yr,
-            "debut_order": debut_order,
-            "author_id": aid,
-            "subsequent_count": subsequent_count,
-            "reselection_count": reselection_count,
-            "reselection_prob": reselection_prob,
-            "ever_reselected": ever_reselected,
-        })
+        records.append(
+            {
+                "debut_edition_key": debut_ek,
+                "debut_year": debut_yr,
+                "debut_order": debut_order,
+                "author_id": aid,
+                "subsequent_count": subsequent_count,
+                "reselection_count": reselection_count,
+                "reselection_prob": reselection_prob,
+                "ever_reselected": ever_reselected,
+            }
+        )
 
-    detail_df = pd.DataFrame(records).sort_values(
-        ["debut_year", "debut_edition_key", "author_id"]
-    ).reset_index(drop=True)
+    detail_df = (
+        pd.DataFrame(records)
+        .sort_values(["debut_year", "debut_edition_key", "author_id"])
+        .reset_index(drop=True)
+    )
 
     # Anthology-level aggregate
     agg_records = []
@@ -245,15 +252,17 @@ def compute(df_raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
         anthology_label = _edition_label(debut_ek, int(debut_yr), ek_to_title)
 
-        agg_records.append({
-            "debut_edition_key": debut_ek,
-            "debut_year": int(debut_yr),
-            "n_debut_authors": n_debut_authors,
-            "n_with_subsequent": n_with_subsequent,
-            "mean_reselection_prob": mean_reselection_prob,
-            "ever_reselected_rate": ever_reselected_rate,
-            "anthology_label": anthology_label,
-        })
+        agg_records.append(
+            {
+                "debut_edition_key": debut_ek,
+                "debut_year": int(debut_yr),
+                "n_debut_authors": n_debut_authors,
+                "n_with_subsequent": n_with_subsequent,
+                "mean_reselection_prob": mean_reselection_prob,
+                "ever_reselected_rate": ever_reselected_rate,
+                "anthology_label": anthology_label,
+            }
+        )
 
     edition_df = (
         pd.DataFrame(agg_records)
@@ -271,7 +280,14 @@ def print_table(edition_df: pd.DataFrame) -> None:
     with_sub = edition_df[edition_df["n_with_subsequent"] > 0].copy()
     without_sub = edition_df[edition_df["n_with_subsequent"] == 0].copy()
 
-    cols = ["Debut anthology", "Year", "N debut", "N w/oppty", "Mean p(resel)", "Ever resel."]
+    cols = [
+        "Debut anthology",
+        "Year",
+        "N debut",
+        "N w/oppty",
+        "Mean p(resel)",
+        "Ever resel.",
+    ]
     widths = [35, 4, 7, 9, 12, 11]
 
     header = " | ".join(c.ljust(w) for c, w in zip(cols, widths))
@@ -308,8 +324,7 @@ def print_table(edition_df: pd.DataFrame) -> None:
         print("Most recent debut anthologies (no subsequent opportunities to measure):")
         for _, row in without_sub.iterrows():
             print(
-                f"  {row['anthology_label']}: "
-                f"{row['n_debut_authors']} debut author(s)"
+                f"  {row['anthology_label']}: {row['n_debut_authors']} debut author(s)"
             )
 
 

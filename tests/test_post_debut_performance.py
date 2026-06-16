@@ -134,11 +134,36 @@ def test_root_only_opportunities_include_excerpt_only_editions():
 def test_author_stats_deduplicate_multiple_works_in_same_edition():
     raw = make_raw(
         [
-            {"edition_id": 1, "anthology_publication_year": 2000, "work_id": "w1", "author_id": "a1"},
-            {"edition_id": 1, "anthology_publication_year": 2000, "work_id": "w2", "author_id": "a1"},
-            {"edition_id": 1, "anthology_publication_year": 2000, "work_id": "w3", "author_id": "a2"},
-            {"edition_id": 2, "anthology_publication_year": 2010, "work_id": "w4", "author_id": "a1"},
-            {"edition_id": 2, "anthology_publication_year": 2010, "work_id": "w5", "author_id": "a2"},
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "work_id": "w1",
+                "author_id": "a1",
+            },
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "work_id": "w2",
+                "author_id": "a1",
+            },
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "work_id": "w3",
+                "author_id": "a2",
+            },
+            {
+                "edition_id": 2,
+                "anthology_publication_year": 2010,
+                "work_id": "w4",
+                "author_id": "a1",
+            },
+            {
+                "edition_id": 2,
+                "anthology_publication_year": 2010,
+                "work_id": "w5",
+                "author_id": "a2",
+            },
         ]
     )
     editions = build_edition_table(raw)

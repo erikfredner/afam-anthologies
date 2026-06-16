@@ -163,12 +163,15 @@ def build_real_targets(df: pd.DataFrame) -> dict[str, EditionTarget]:
             aid = str(row["author_id"])
             author_works.setdefault(aid, set()).add(wid)
         authored_work_ids = set(ed_rows["work_id"].astype(str))
-        authorless_work_ids = set(
-            df.loc[
-                (df["edition_key"] == ek) & df["author_id"].isna(),
-                "work_id",
-            ].astype(str)
-        ) - authored_work_ids
+        authorless_work_ids = (
+            set(
+                df.loc[
+                    (df["edition_key"] == ek) & df["author_id"].isna(),
+                    "work_id",
+                ].astype(str)
+            )
+            - authored_work_ids
+        )
         result[ek] = EditionTarget(
             per_author_work_counts=sorted(
                 (len(v) for v in author_works.values()), reverse=True
@@ -411,13 +414,21 @@ def plot_figure(
     fig, ax = plt.subplots(figsize=(8, 8))
 
     ax.scatter(
-        sim_x, sim_y, s=norm_size,
-        color="0.65", alpha=0.5, linewidths=0,
+        sim_x,
+        sim_y,
+        s=norm_size,
+        color="0.65",
+        alpha=0.5,
+        linewidths=0,
         label="Simulated pairs (area ∝ frequency)",
     )
     ax.scatter(
-        real_x, real_y, s=50,
-        color="black", zorder=4, linewidths=0,
+        real_x,
+        real_y,
+        s=50,
+        color="black",
+        zorder=4,
+        linewidths=0,
         label="Real pairs",
     )
 
@@ -434,14 +445,26 @@ def plot_figure(
         fontsize=11,
     )
     ax.text(
-        0.72, 0.22, "More shared\nauthors",
-        transform=ax.transAxes, ha="center", va="center",
-        fontsize=10, color="grey", style="italic",
+        0.72,
+        0.22,
+        "More shared\nauthors",
+        transform=ax.transAxes,
+        ha="center",
+        va="center",
+        fontsize=10,
+        color="grey",
+        style="italic",
     )
     ax.text(
-        0.22, 0.72, "More shared\nworks",
-        transform=ax.transAxes, ha="center", va="center",
-        fontsize=10, color="grey", style="italic",
+        0.22,
+        0.72,
+        "More shared\nworks",
+        transform=ax.transAxes,
+        ha="center",
+        va="center",
+        fontsize=10,
+        color="grey",
+        style="italic",
     )
     ax.legend(loc="upper left", fontsize=10)
 
@@ -464,15 +487,24 @@ def main() -> None:
         help="Include within-series pairs (e.g. NAAAL ed.1 vs. ed.2). Excluded by default.",
     )
     parser.add_argument(
-        "--n", type=int, default=DEFAULT_N, metavar="INT",
+        "--n",
+        type=int,
+        default=DEFAULT_N,
+        metavar="INT",
         help=f"Simulation trials (default: {DEFAULT_N})",
     )
     parser.add_argument(
-        "--seed", type=int, default=DEFAULT_SEED, metavar="INT",
+        "--seed",
+        type=int,
+        default=DEFAULT_SEED,
+        metavar="INT",
         help=f"Random seed (default: {DEFAULT_SEED})",
     )
     parser.add_argument(
-        "--out", type=Path, default=OUT_FILE, metavar="PATH",
+        "--out",
+        type=Path,
+        default=OUT_FILE,
+        metavar="PATH",
         help=f"Output figure path (default: {OUT_FILE})",
     )
     args = parser.parse_args()
@@ -498,8 +530,7 @@ def main() -> None:
 
     # ── Per-edition sets ──────────────────────────────────────────────────────
     edition_works: dict[str, set[str]] = {
-        ek: set(grp["work_id"].astype(str))
-        for ek, grp in df.groupby("edition_key")
+        ek: set(grp["work_id"].astype(str)) for ek, grp in df.groupby("edition_key")
     }
     edition_authors: dict[str, set[str]] = {
         ek: set(grp["author_id"].dropna().astype(str))
@@ -525,15 +556,14 @@ def main() -> None:
     # Authorless works sampled independently (no author to entail)
     authored_wids: set[str] = {w for wids in author_to_all_works.values() for w in wids}
     authorless_wids = (
-        df[df["author_id"].isna()]
-        .drop_duplicates("work_id")["work_id"]
-        .astype(str)
+        df[df["author_id"].isna()].drop_duplicates("work_id")["work_id"].astype(str)
     )
     all_authorless_wids = sorted(w for w in authorless_wids if w not in authored_wids)
 
     eligible_authorless: dict[str, list[str]] = {
         ek: [
-            w for w in all_authorless_wids
+            w
+            for w in all_authorless_wids
             if work_first_year.get(w, edition_year[ek] + 1) <= edition_year[ek]
         ]
         for ek in sorted_keys
@@ -548,8 +578,8 @@ def main() -> None:
         sorted_keys,
         cross_series_only=cross_series_only,
     )
-    obs_gt   = sum(1 for sa, sw in real_pairs if sa > sw)
-    obs_tie  = sum(1 for sa, sw in real_pairs if sa == sw)
+    obs_gt = sum(1 for sa, sw in real_pairs if sa > sw)
+    obs_tie = sum(1 for sa, sw in real_pairs if sa == sw)
     total_pairs = len(real_pairs)
     obs_rate = obs_gt / total_pairs
 
@@ -604,19 +634,21 @@ def main() -> None:
     print()
 
     # ── Report ────────────────────────────────────────────────────────────────
-    arr    = np.array(sim_rates)
-    mean   = float(arr.mean())
-    std    = float(arr.std())
+    arr = np.array(sim_rates)
+    mean = float(arr.mean())
+    std = float(arr.std())
     median = float(np.median(arr))
-    p95    = float(np.percentile(arr, 95))
-    p99    = float(np.percentile(arr, 99))
-    p999   = float(np.percentile(arr, 99.9))
+    p95 = float(np.percentile(arr, 95))
+    p99 = float(np.percentile(arr, 99))
+    p999 = float(np.percentile(arr, 99.9))
     sim_max = float(arr.max())
 
-    z     = (obs_rate - mean) / std if std > 0 else float("inf")
+    z = (obs_rate - mean) / std if std > 0 else float("inf")
     emp_p = float((arr >= obs_rate).mean())
 
-    print(f"===== SIMULATION (N={args.n:,}, publication-year pools, seed={args.seed}) =====")
+    print(
+        f"===== SIMULATION (N={args.n:,}, publication-year pools, seed={args.seed}) ====="
+    )
     print(f"  Mean rate:         {fmt_pct(mean)} ± {fmt_pct(std)}")
     print(f"  Median:            {fmt_pct(median)}")
     print(f"  95th percentile:   {fmt_pct(p95)}")

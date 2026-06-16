@@ -20,14 +20,15 @@ from inclusion_inequality import (  # noqa: E402
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def make_df(rows: list[dict]) -> pd.DataFrame:
     """Build a DataFrame with the column schema assign_edition_key expects."""
     defaults = {
-        "anthology_id":    "",
+        "anthology_id": "",
         "anthology_title": "",
-        "series":          "",
-        "edition_number":  "",
-        "volume":          "",
+        "series": "",
+        "edition_number": "",
+        "volume": "",
     }
     df = pd.DataFrame(rows)
     for col, val in defaults.items():
@@ -37,6 +38,7 @@ def make_df(rows: list[dict]) -> pd.DataFrame:
 
 
 # ── gini ──────────────────────────────────────────────────────────────────────
+
 
 def test_gini_perfect_equality():
     """All items appear the same number of times → Gini = 0."""
@@ -82,6 +84,7 @@ def test_gini_bounded():
 
 # ── lorenz ────────────────────────────────────────────────────────────────────
 
+
 def test_lorenz_starts_and_ends_at_zero_and_one():
     pop, inc = lorenz(np.array([1, 2, 3]))
     assert pop[0] == pytest.approx(0.0)
@@ -126,22 +129,39 @@ def test_lorenz_length_equals_n_plus_one():
 
 # ── assign_edition_key ────────────────────────────────────────────────────────
 
+
 def test_assign_edition_key_uses_series_when_present():
-    df = make_df([
-        {"anthology_id": "1", "series": "NAAAL", "edition_number": "2"},
-        {"anthology_id": "2", "series": "NAAAL", "edition_number": "2"},  # same edition, different volume
-    ])
+    df = make_df(
+        [
+            {"anthology_id": "1", "series": "NAAAL", "edition_number": "2"},
+            {
+                "anthology_id": "2",
+                "series": "NAAAL",
+                "edition_number": "2",
+            },  # same edition, different volume
+        ]
+    )
     result = assign_edition_key(df)
     assert list(result["edition_key"]) == ["NAAAL|2", "NAAAL|2"]
 
 
 def test_assign_edition_key_strips_volume_from_title_when_no_series():
-    df = make_df([
-        {"anthology_id": "10", "anthology_title": "Big Anthology, Vol. 1",
-         "edition_number": "3", "volume": "1"},
-        {"anthology_id": "11", "anthology_title": "Big Anthology, Vol. 2",
-         "edition_number": "3", "volume": "2"},
-    ])
+    df = make_df(
+        [
+            {
+                "anthology_id": "10",
+                "anthology_title": "Big Anthology, Vol. 1",
+                "edition_number": "3",
+                "volume": "1",
+            },
+            {
+                "anthology_id": "11",
+                "anthology_title": "Big Anthology, Vol. 2",
+                "edition_number": "3",
+                "volume": "2",
+            },
+        ]
+    )
     result = assign_edition_key(df)
     # Both volumes should collapse to the same edition key
     assert result["edition_key"].nunique() == 1
@@ -155,23 +175,33 @@ def test_assign_edition_key_falls_back_to_anthology_id():
 
 
 def test_assign_edition_key_series_takes_priority_over_volume():
-    df = make_df([
-        {"anthology_id": "5", "series": "MySeries", "edition_number": "1",
-         "volume": "2", "anthology_title": "Some Title, Vol. 2"},
-    ])
+    df = make_df(
+        [
+            {
+                "anthology_id": "5",
+                "series": "MySeries",
+                "edition_number": "1",
+                "volume": "2",
+                "anthology_title": "Some Title, Vol. 2",
+            },
+        ]
+    )
     result = assign_edition_key(df)
     assert result["edition_key"].iloc[0] == "MySeries|1"
 
 
 # ── edition_counts ────────────────────────────────────────────────────────────
 
+
 def test_edition_counts_unique_editions_per_item():
     """A work appearing in two volumes of the same edition counts once."""
-    df = make_df([
-        {"anthology_id": "1", "series": "S", "edition_number": "1"},
-        {"anthology_id": "2", "series": "S", "edition_number": "1"},
-        {"anthology_id": "3", "series": "S", "edition_number": "2"},
-    ])
+    df = make_df(
+        [
+            {"anthology_id": "1", "series": "S", "edition_number": "1"},
+            {"anthology_id": "2", "series": "S", "edition_number": "1"},
+            {"anthology_id": "3", "series": "S", "edition_number": "2"},
+        ]
+    )
     df = assign_edition_key(df)
     df["work_id"] = "w1"  # same work in all three anthologies
     counts = edition_counts(df, "work_id")
@@ -195,8 +225,9 @@ def test_edition_counts_multiple_items():
 
 # ── plot smoke test ───────────────────────────────────────────────────────────
 
+
 def test_plot_writes_png(tmp_path: Path):
-    work_counts   = np.array([1, 1, 2, 3, 5])
+    work_counts = np.array([1, 1, 2, 3, 5])
     author_counts = np.array([1, 2, 4])
     out = tmp_path / "test_inequality.png"
     plot(work_counts, author_counts, out, title="Test")

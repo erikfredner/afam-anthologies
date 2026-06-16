@@ -34,13 +34,15 @@ from afam.sql import query_path
 OUT_CSV = DATA_DIR / "half_or_more_summary.csv"
 
 VARIANT_LABELS = {
-    "all":       "All works (incl. excerpts)",
-    "root":      "Root works only",
+    "all": "All works (incl. excerpts)",
+    "root": "Root works only",
     "coalesced": "Coalesced (excerpts → root)",
 }
 
 
-def variant_stats(df: pd.DataFrame, work_key: pd.Series, total_editions: int) -> dict[str, int]:
+def variant_stats(
+    df: pd.DataFrame, work_key: pd.Series, total_editions: int
+) -> dict[str, int]:
     """Unique/half-or-more counts for one variant.
 
     `work_key` is an index-aligned Series identifying the work (or work
@@ -52,9 +54,9 @@ def variant_stats(df: pd.DataFrame, work_key: pd.Series, total_editions: int) ->
     )
     return {
         "unique_authors": len(author_editions),
-        "authors_half":   int((author_editions * 2 >= total_editions).sum()),
-        "unique_works":   len(work_editions),
-        "works_half":     int((work_editions * 2 >= total_editions).sum()),
+        "authors_half": int((author_editions * 2 >= total_editions).sum()),
+        "unique_works": len(work_editions),
+        "works_half": int((work_editions * 2 >= total_editions).sum()),
     }
 
 
@@ -67,8 +69,8 @@ def compute_summary(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     coalesced_key = df["parent_id"].fillna(df["work_id"])
 
     stats = {
-        "all":       variant_stats(df, df["work_id"], total_editions),
-        "root":      variant_stats(root, root["work_id"], total_editions),
+        "all": variant_stats(df, df["work_id"], total_editions),
+        "root": variant_stats(root, root["work_id"], total_editions),
         "coalesced": variant_stats(df, coalesced_key, total_editions),
     }
     summary = pd.DataFrame(stats).rename(columns=VARIANT_LABELS)
@@ -106,7 +108,7 @@ def main() -> None:
     table = format_summary(summary)
 
     threshold = -(-total_editions // 2)  # ceil(total / 2)
-    print(f"{total_editions} tagged editions; \"half or more\" = ≥{threshold}\n")
+    print(f'{total_editions} tagged editions; "half or more" = ≥{threshold}\n')
     print(table.to_string())
 
     if args.save_csv:

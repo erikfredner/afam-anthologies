@@ -16,14 +16,15 @@ import argparse
 import pandas as pd
 import math
 
+
 def compute_never_cut_stats(df: pd.DataFrame):
     # ensure edition is integer
-    df['anthology_edition'] = df['anthology_edition'].astype(int)
-    all_editions = sorted(df['anthology_edition'].unique())
+    df["anthology_edition"] = df["anthology_edition"].astype(int)
+    all_editions = sorted(df["anthology_edition"].unique())
     max_edition = all_editions[-1]
 
     # group by author
-    author_groups = df.groupby('author_id')['anthology_edition'].unique()
+    author_groups = df.groupby("author_id")["anthology_edition"].unique()
 
     at_risk = 0
     never_cut = 0
@@ -42,18 +43,19 @@ def compute_never_cut_stats(df: pd.DataFrame):
 
     # compute probability, odds, and standard error
     p = never_cut / at_risk if at_risk else 0.0
-    odds = p / (1 - p) if 0 < p < 1 else (float('inf') if p == 1 else 0.0)
+    odds = p / (1 - p) if 0 < p < 1 else (float("inf") if p == 1 else 0.0)
     se = math.sqrt(p * (1 - p) / at_risk) if at_risk else 0.0
 
     return at_risk, never_cut, p, odds, se
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="Compute probability that an author is never cut in subsequent editions."
     )
     parser.add_argument(
-        'input_csv',
-        help='Path to the input CSV (must include "author_id" and "anthology_edition" columns)'
+        "input_csv",
+        help='Path to the input CSV (must include "author_id" and "anthology_edition" columns)',
     )
     args = parser.parse_args()
 
@@ -67,5 +69,6 @@ def main():
     print(f"Odds of never being cut:            {odds:.4f}")
     print(f"Standard error:                     {se:.4f}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

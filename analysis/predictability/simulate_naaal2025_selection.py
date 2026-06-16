@@ -511,8 +511,12 @@ def print_surprising_absences(
     if save_csv:
         works_df.to_csv(CSV_OUT_W, index=False)
         authors_df.to_csv(CSV_OUT_A, index=False)
-        print(f"\nSaved → {CSV_OUT_W}  ({len(works_df)} works, predicted_p ≥ {threshold})")
-        print(f"Saved → {CSV_OUT_A}  ({len(authors_df)} authors, predicted_p ≥ {threshold})")
+        print(
+            f"\nSaved → {CSV_OUT_W}  ({len(works_df)} works, predicted_p ≥ {threshold})"
+        )
+        print(
+            f"Saved → {CSV_OUT_A}  ({len(authors_df)} authors, predicted_p ≥ {threshold})"
+        )
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -616,7 +620,9 @@ def main() -> None:
         ["author_name"],
         threshold=args.threshold,
     )
-    print_surprising_absences(sa_works, sa_authors, save_csv=args.save_csv, threshold=args.threshold)
+    print_surprising_absences(
+        sa_works, sa_authors, save_csv=args.save_csv, threshold=args.threshold
+    )
 
 
 if __name__ == "__main__":

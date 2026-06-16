@@ -38,9 +38,24 @@ def make_raw(rows: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
 def test_same_year_later_edition_counts_as_subsequent_reselection():
     raw, editions = make_raw(
         [
-            {"work_id": "w1", "edition_id": 1, "anthology_publication_year": 2000, "author_id": "a1"},
-            {"work_id": "w1", "edition_id": 2, "anthology_publication_year": 2000, "author_id": "a1"},
-            {"work_id": "w2", "edition_id": 3, "anthology_publication_year": 2010, "author_id": "a2"},
+            {
+                "work_id": "w1",
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "author_id": "a1",
+            },
+            {
+                "work_id": "w1",
+                "edition_id": 2,
+                "anthology_publication_year": 2000,
+                "author_id": "a1",
+            },
+            {
+                "work_id": "w2",
+                "edition_id": 3,
+                "anthology_publication_year": 2010,
+                "author_id": "a2",
+            },
         ]
     )
 
@@ -93,10 +108,30 @@ def test_cross_series_uses_debut_edition_group_not_arbitrary_debut_year_group():
 def test_summary_reports_ever_and_opportunity_estimands():
     raw, editions = make_raw(
         [
-            {"work_id": "w1", "edition_id": 1, "anthology_publication_year": 2000, "author_id": "a1"},
-            {"work_id": "w2", "edition_id": 1, "anthology_publication_year": 2000, "author_id": "a2"},
-            {"work_id": "w3", "edition_id": 2, "anthology_publication_year": 2010, "author_id": "a1"},
-            {"work_id": "w4", "edition_id": 3, "anthology_publication_year": 2020, "author_id": "a3"},
+            {
+                "work_id": "w1",
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "author_id": "a1",
+            },
+            {
+                "work_id": "w2",
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "author_id": "a2",
+            },
+            {
+                "work_id": "w3",
+                "edition_id": 2,
+                "anthology_publication_year": 2010,
+                "author_id": "a1",
+            },
+            {
+                "work_id": "w4",
+                "edition_id": 3,
+                "anthology_publication_year": 2020,
+                "author_id": "a3",
+            },
         ]
     )
     works = compute_work_records(raw, editions)
@@ -121,15 +156,32 @@ def test_summary_reports_ever_and_opportunity_estimands():
 def test_debut_work_author_outcomes_detect_author_only_return():
     raw, editions = make_raw(
         [
-            {"work_id": "w1", "edition_id": 1, "anthology_publication_year": 2000, "author_id": "a1"},
-            {"work_id": "w2", "edition_id": 2, "anthology_publication_year": 2010, "author_id": "a1"},
-            {"work_id": "w3", "edition_id": 2, "anthology_publication_year": 2010, "author_id": "a2"},
+            {
+                "work_id": "w1",
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "author_id": "a1",
+            },
+            {
+                "work_id": "w2",
+                "edition_id": 2,
+                "anthology_publication_year": 2010,
+                "author_id": "a1",
+            },
+            {
+                "work_id": "w3",
+                "edition_id": 2,
+                "anthology_publication_year": 2010,
+                "author_id": "a2",
+            },
         ]
     )
     works = compute_work_records(raw, editions)
     authors = compute_author_records(raw, editions)
 
-    outcomes = build_debut_work_author_outcomes(raw, works, authors).set_index("work_id")
+    outcomes = build_debut_work_author_outcomes(raw, works, authors).set_index(
+        "work_id"
+    )
 
     assert not bool(outcomes.loc["w1", "work_reselected"])
     assert bool(outcomes.loc["w1", "any_author_reselected"])
@@ -139,15 +191,32 @@ def test_debut_work_author_outcomes_detect_author_only_return():
 def test_work_debut_pair_uses_work_debut_not_author_debut():
     raw, editions = make_raw(
         [
-            {"work_id": "old", "edition_id": 1, "anthology_publication_year": 1990, "author_id": "a1"},
-            {"work_id": "new", "edition_id": 2, "anthology_publication_year": 2000, "author_id": "a1"},
-            {"work_id": "other", "edition_id": 3, "anthology_publication_year": 2010, "author_id": "a2"},
+            {
+                "work_id": "old",
+                "edition_id": 1,
+                "anthology_publication_year": 1990,
+                "author_id": "a1",
+            },
+            {
+                "work_id": "new",
+                "edition_id": 2,
+                "anthology_publication_year": 2000,
+                "author_id": "a1",
+            },
+            {
+                "work_id": "other",
+                "edition_id": 3,
+                "anthology_publication_year": 2010,
+                "author_id": "a2",
+            },
         ]
     )
     works = compute_work_records(raw, editions)
     authors = compute_author_records(raw, editions)
 
-    outcomes = build_debut_work_author_outcomes(raw, works, authors).set_index("work_id")
+    outcomes = build_debut_work_author_outcomes(raw, works, authors).set_index(
+        "work_id"
+    )
 
     assert "new" in outcomes.index
     assert not bool(outcomes.loc["new", "work_reselected"])

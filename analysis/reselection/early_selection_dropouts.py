@@ -140,7 +140,9 @@ def compute_selection_stats(
         .drop_duplicates([id_col, "edition_id"])
         .copy()
     )
-    pairs["anthology_publication_year"] = pairs["anthology_publication_year"].astype(int)
+    pairs["anthology_publication_year"] = pairs["anthology_publication_year"].astype(
+        int
+    )
 
     rows: list[dict] = []
     for entity_id, grp in pairs.groupby(id_col, sort=False):
@@ -234,7 +236,9 @@ def build_author_dropouts(
         "post_early_pre_contemporary_count",
         "contemporary_selection_count",
     ]
-    return _filter_and_rank(out[cols], min_early_count=min_early_count, label_col="author_name")
+    return _filter_and_rank(
+        out[cols], min_early_count=min_early_count, label_col="author_name"
+    )
 
 
 def build_work_dropouts(
@@ -281,7 +285,9 @@ def build_work_dropouts(
         "post_early_pre_contemporary_count",
         "contemporary_selection_count",
     ]
-    return _filter_and_rank(out[cols], min_early_count=min_early_count, label_col="work_title")
+    return _filter_and_rank(
+        out[cols], min_early_count=min_early_count, label_col="work_title"
+    )
 
 
 def _print_table(title: str, df: pd.DataFrame, top: int, columns: list[str]) -> None:

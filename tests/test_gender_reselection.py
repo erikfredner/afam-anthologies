@@ -19,7 +19,9 @@ from gender_reselection import (  # noqa: E402
 
 
 def make_selections(rows):
-    return pd.DataFrame(rows, columns=["author_id", "gender_group", "edition_key", "ek_year"])
+    return pd.DataFrame(
+        rows, columns=["author_id", "gender_group", "edition_key", "ek_year"]
+    )
 
 
 # ── build_gender_group ─────────────────────────────────────────────────────────
@@ -47,8 +49,18 @@ def test_build_gender_group_other():
 def test_basic_opportunity_generation():
     """Author in ed1 (1941) gets opportunity for ed2 (1968); not the reverse."""
     rows = [
-        {"author_id": "a1", "gender_group": "Male", "edition_key": "ed1", "ek_year": 1941},
-        {"author_id": "a1", "gender_group": "Male", "edition_key": "ed2", "ek_year": 1968},
+        {
+            "author_id": "a1",
+            "gender_group": "Male",
+            "edition_key": "ed1",
+            "ek_year": 1941,
+        },
+        {
+            "author_id": "a1",
+            "gender_group": "Male",
+            "edition_key": "ed2",
+            "ek_year": 1968,
+        },
     ]
     sel = make_selections(rows)
     opps = compute_opportunities(sel)
@@ -60,7 +72,12 @@ def test_basic_opportunity_generation():
 def test_debut_excluded():
     """Author's first edition is never itself an opportunity."""
     rows = [
-        {"author_id": "a1", "gender_group": "Female", "edition_key": "ed1", "ek_year": 1929},
+        {
+            "author_id": "a1",
+            "gender_group": "Female",
+            "edition_key": "ed1",
+            "ek_year": 1929,
+        },
     ]
     sel = make_selections(rows)
     opps = compute_opportunities(sel)
@@ -70,10 +87,25 @@ def test_debut_excluded():
 def test_selected_flag_correct():
     """Opportunity marked selected=1 only if author appears in that edition."""
     rows = [
-        {"author_id": "a1", "gender_group": "Male", "edition_key": "ed1", "ek_year": 1929},
-        {"author_id": "a1", "gender_group": "Male", "edition_key": "ed2", "ek_year": 1941},
+        {
+            "author_id": "a1",
+            "gender_group": "Male",
+            "edition_key": "ed1",
+            "ek_year": 1929,
+        },
+        {
+            "author_id": "a1",
+            "gender_group": "Male",
+            "edition_key": "ed2",
+            "ek_year": 1941,
+        },
         # a2 only debuts in ed1 — does not appear in ed2
-        {"author_id": "a2", "gender_group": "Female", "edition_key": "ed1", "ek_year": 1929},
+        {
+            "author_id": "a2",
+            "gender_group": "Female",
+            "edition_key": "ed1",
+            "ek_year": 1929,
+        },
     ]
     sel = make_selections(rows)
     opps = compute_opportunities(sel)
@@ -94,10 +126,30 @@ def test_aggregate_by_year_totals():
     """Sum of opportunities across genders matches expected cross-product count."""
     # 2 Male authors + 1 Female debut in ed1(1929); ed2(1941) exists (only m1 selected)
     rows = [
-        {"author_id": "m1", "gender_group": "Male", "edition_key": "ed1", "ek_year": 1929},
-        {"author_id": "m2", "gender_group": "Male", "edition_key": "ed1", "ek_year": 1929},
-        {"author_id": "f1", "gender_group": "Female", "edition_key": "ed1", "ek_year": 1929},
-        {"author_id": "m1", "gender_group": "Male", "edition_key": "ed2", "ek_year": 1941},
+        {
+            "author_id": "m1",
+            "gender_group": "Male",
+            "edition_key": "ed1",
+            "ek_year": 1929,
+        },
+        {
+            "author_id": "m2",
+            "gender_group": "Male",
+            "edition_key": "ed1",
+            "ek_year": 1929,
+        },
+        {
+            "author_id": "f1",
+            "gender_group": "Female",
+            "edition_key": "ed1",
+            "ek_year": 1929,
+        },
+        {
+            "author_id": "m1",
+            "gender_group": "Male",
+            "edition_key": "ed2",
+            "ek_year": 1941,
+        },
     ]
     sel = make_selections(rows)
     opps = compute_opportunities(sel)
@@ -112,11 +164,36 @@ def test_aggregate_by_year_totals():
 def test_compute_cumulative_monotone():
     """cum_opportunities and cum_reselections are non-decreasing per gender."""
     rows = [
-        {"author_id": "m1", "gender_group": "Male", "edition_key": "ed1", "ek_year": 1929},
-        {"author_id": "m1", "gender_group": "Male", "edition_key": "ed2", "ek_year": 1941},
-        {"author_id": "m1", "gender_group": "Male", "edition_key": "ed3", "ek_year": 1968},
-        {"author_id": "m2", "gender_group": "Male", "edition_key": "ed2", "ek_year": 1941},
-        {"author_id": "m2", "gender_group": "Male", "edition_key": "ed3", "ek_year": 1968},
+        {
+            "author_id": "m1",
+            "gender_group": "Male",
+            "edition_key": "ed1",
+            "ek_year": 1929,
+        },
+        {
+            "author_id": "m1",
+            "gender_group": "Male",
+            "edition_key": "ed2",
+            "ek_year": 1941,
+        },
+        {
+            "author_id": "m1",
+            "gender_group": "Male",
+            "edition_key": "ed3",
+            "ek_year": 1968,
+        },
+        {
+            "author_id": "m2",
+            "gender_group": "Male",
+            "edition_key": "ed2",
+            "ek_year": 1941,
+        },
+        {
+            "author_id": "m2",
+            "gender_group": "Male",
+            "edition_key": "ed3",
+            "ek_year": 1968,
+        },
     ]
     sel = make_selections(rows)
     opps = compute_opportunities(sel)

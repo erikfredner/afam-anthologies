@@ -39,13 +39,43 @@ def make_raw(rows: list[dict]) -> pd.DataFrame:
 def test_qualifying_author_ids_uses_half_or_more_editions():
     raw = make_raw(
         [
-            {"edition_id": 1, "anthology_publication_year": 1900, "author_id": "a1", "work_id": "w1"},
-            {"edition_id": 2, "anthology_publication_year": 1910, "author_id": "a1", "work_id": "w2"},
-            {"edition_id": 3, "anthology_publication_year": 1920, "author_id": "a1", "work_id": "w3"},
-            {"edition_id": 1, "anthology_publication_year": 1900, "author_id": "a2", "work_id": "w4"},
-            {"edition_id": 2, "anthology_publication_year": 1910, "author_id": "a2", "work_id": "w5"},
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 1900,
+                "author_id": "a1",
+                "work_id": "w1",
+            },
+            {
+                "edition_id": 2,
+                "anthology_publication_year": 1910,
+                "author_id": "a1",
+                "work_id": "w2",
+            },
+            {
+                "edition_id": 3,
+                "anthology_publication_year": 1920,
+                "author_id": "a1",
+                "work_id": "w3",
+            },
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 1900,
+                "author_id": "a2",
+                "work_id": "w4",
+            },
+            {
+                "edition_id": 2,
+                "anthology_publication_year": 1910,
+                "author_id": "a2",
+                "work_id": "w5",
+            },
             {"edition_id": 4, "anthology_publication_year": 1930, "work_id": "w0"},
-            {"edition_id": 5, "anthology_publication_year": 1940, "author_id": "a3", "work_id": "w6"},
+            {
+                "edition_id": 5,
+                "anthology_publication_year": 1940,
+                "author_id": "a3",
+                "work_id": "w6",
+            },
         ]
     )
     editions = build_edition_table(raw)
@@ -67,7 +97,9 @@ def test_year_based_records_exclude_same_year_after_debut():
     editions = build_edition_table(raw)
     pairs = build_entity_pairs(raw, "work_id", editions)
 
-    records = compute_year_based_records(pairs, "work_id", editions).set_index("work_id")
+    records = compute_year_based_records(pairs, "work_id", editions).set_index(
+        "work_id"
+    )
 
     assert records.loc["w1", "debut_year"] == 2000
     assert records.loc["w1", "opportunities"] == 2
@@ -78,14 +110,31 @@ def test_year_based_records_exclude_same_year_after_debut():
 def test_author_records_deduplicate_multiple_works_in_same_edition():
     raw = make_raw(
         [
-            {"edition_id": 1, "anthology_publication_year": 2000, "author_id": "a1", "work_id": "w1"},
-            {"edition_id": 1, "anthology_publication_year": 2000, "author_id": "a1", "work_id": "w2"},
-            {"edition_id": 2, "anthology_publication_year": 2010, "author_id": "a1", "work_id": "w3"},
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "author_id": "a1",
+                "work_id": "w1",
+            },
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "author_id": "a1",
+                "work_id": "w2",
+            },
+            {
+                "edition_id": 2,
+                "anthology_publication_year": 2010,
+                "author_id": "a1",
+                "work_id": "w3",
+            },
         ]
     )
     editions = build_edition_table(raw)
     pairs = build_entity_pairs(raw, "author_id", editions)
-    records = compute_year_based_records(pairs, "author_id", editions).set_index("author_id")
+    records = compute_year_based_records(pairs, "author_id", editions).set_index(
+        "author_id"
+    )
 
     assert len(pairs[pairs["author_id"] == "a1"]) == 2
     assert records.loc["a1", "total_selection_count"] == 2
@@ -96,17 +145,55 @@ def test_author_records_deduplicate_multiple_works_in_same_edition():
 def test_build_author_work_rows_filters_root_works_and_computes_spread():
     raw = make_raw(
         [
-            {"edition_id": 1, "anthology_publication_year": 1900, "author_id": "a1", "author_name": "Author One", "work_id": "w1", "work_title": "One"},
-            {"edition_id": 2, "anthology_publication_year": 1910, "author_id": "a1", "author_name": "Author One", "work_id": "w1", "work_title": "One"},
-            {"edition_id": 1, "anthology_publication_year": 1900, "author_id": "a1", "author_name": "Author One", "work_id": "w2", "work_title": "Two"},
-            {"edition_id": 1, "anthology_publication_year": 1900, "author_id": "a1", "author_name": "Author One", "work_id": "child", "work_title": "Child", "parent_id": "w1"},
-            {"edition_id": 2, "anthology_publication_year": 1910, "author_id": "a2", "author_name": "Author Two", "work_id": "w3", "work_title": "Three"},
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 1900,
+                "author_id": "a1",
+                "author_name": "Author One",
+                "work_id": "w1",
+                "work_title": "One",
+            },
+            {
+                "edition_id": 2,
+                "anthology_publication_year": 1910,
+                "author_id": "a1",
+                "author_name": "Author One",
+                "work_id": "w1",
+                "work_title": "One",
+            },
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 1900,
+                "author_id": "a1",
+                "author_name": "Author One",
+                "work_id": "w2",
+                "work_title": "Two",
+            },
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 1900,
+                "author_id": "a1",
+                "author_name": "Author One",
+                "work_id": "child",
+                "work_title": "Child",
+                "parent_id": "w1",
+            },
+            {
+                "edition_id": 2,
+                "anthology_publication_year": 1910,
+                "author_id": "a2",
+                "author_name": "Author Two",
+                "work_id": "w3",
+                "work_title": "Three",
+            },
         ]
     )
     editions = build_edition_table(raw)
     root = filter_root_works(raw)
 
-    rows = build_author_work_rows(raw, root, editions).set_index(["author_id", "work_id"])
+    rows = build_author_work_rows(raw, root, editions).set_index(
+        ["author_id", "work_id"]
+    )
 
     assert set(rows.index) == {("a1", "w1"), ("a1", "w2"), ("a2", "w3")}
     assert rows.loc[("a1", "w1"), "work_selection_rate"] == pytest.approx(1.0)
@@ -138,7 +225,7 @@ def test_plot_frames_exclude_works_with_one_or_fewer_opportunities():
                 "author_selection_rate": 0.5,
                 "work_selection_rate": 0.5,
                 "work_rate_spread": 0.5,
-            }
+            },
         ]
     )
 

@@ -58,9 +58,9 @@ def test_within_series_pairs_excluded_by_default_and_includable():
         keys, work_sets, author_sets, year_map, cross_series_only=False
     )
 
-    assert {("1|1", "1|2")} == {
-        (p.key_i, p.key_j) for p in all_pairs
-    } - {(p.key_i, p.key_j) for p in default_pairs}
+    assert {("1|1", "1|2")} == {(p.key_i, p.key_j) for p in all_pairs} - {
+        (p.key_i, p.key_j) for p in default_pairs
+    }
     assert len(default_pairs) == 5
     assert len(all_pairs) == 6
 

@@ -26,7 +26,9 @@ from afam.viz_style import OUTPUT_DIR
 DATA_FILE = DATA_DIR / "2026-03-13 works per afam anthology.csv"
 OUT_DIR = OUTPUT_DIR
 
-REF_EDITION_KEY = "62"  # 1941 Negro Caravan (series_id empty → edition_key = anthology_id)
+REF_EDITION_KEY = (
+    "62"  # 1941 Negro Caravan (series_id empty → edition_key = anthology_id)
+)
 REF_YEAR = 1941
 
 
@@ -233,7 +235,9 @@ def main() -> None:
 
     print(f"\nRetention rows: {len(df)} subsequent editions")
     if not df.empty:
-        print(df[["edition_key", "year", "author_pct", "work_pct"]].to_string(index=False))
+        print(
+            df[["edition_key", "year", "author_pct", "work_pct"]].to_string(index=False)
+        )
 
     out_path = OUT_DIR / "retention_from_1941.png"
     plot_retention(df, out_path)

@@ -62,7 +62,9 @@ STANDALONE_SHORT: dict[str, str] = {
 # ── Load and prepare ──────────────────────────────────────────────────────────
 
 
-def load_and_prepare_db() -> tuple[dict[str, set], dict[str, set], dict[str, int], dict[str, str]]:
+def load_and_prepare_db() -> tuple[
+    dict[str, set], dict[str, set], dict[str, int], dict[str, str]
+]:
     df = query_db(query_path("work-selection-divergence"))
 
     df["edition_key"] = df.apply(
@@ -444,8 +446,16 @@ def plot(
         if log:
             px = np.maximum(px, lo)
             py = np.maximum(py, lo)
-        ax.scatter(px, py, alpha=0.6, s=40, color="steelblue", marker=marker,
-                   linewidths=0, label=label)
+        ax.scatter(
+            px,
+            py,
+            alpha=0.6,
+            s=40,
+            color="steelblue",
+            marker=marker,
+            linewidths=0,
+            label=label,
+        )
 
     ax.set_xlim(lo if log else 0, lim)
     ax.set_ylim(lo if log else 0, lim)

@@ -82,7 +82,9 @@ ORDER BY ac.author_edition_count DESC, ac.author_name;
 """
 
 
-def classify_authors(df: pd.DataFrame, threshold: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def classify_authors(
+    df: pd.DataFrame, threshold: int
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return frequent authors with and without a work meeting the same threshold."""
     frequent = df[df["author_edition_count"] >= threshold].copy()
     explained = frequent[frequent["best_work_edition_count"] >= threshold].copy()
@@ -90,7 +92,9 @@ def classify_authors(df: pd.DataFrame, threshold: int) -> tuple[pd.DataFrame, pd
     return explained, unexplained
 
 
-def print_results(explained: pd.DataFrame, unexplained: pd.DataFrame, threshold: int) -> None:
+def print_results(
+    explained: pd.DataFrame, unexplained: pd.DataFrame, threshold: int
+) -> None:
     print(f"Threshold: edition_count >= {threshold}\n")
 
     print(
@@ -110,7 +114,9 @@ def print_results(explained: pd.DataFrame, unexplained: pd.DataFrame, threshold:
         f"({len(unexplained)}):"
     )
     for row in unexplained.itertuples(index=False):
-        print(f"  {row.author_name:40s}  author editions: {row.author_edition_count:3d}")
+        print(
+            f"  {row.author_name:40s}  author editions: {row.author_edition_count:3d}"
+        )
 
 
 def main() -> None:

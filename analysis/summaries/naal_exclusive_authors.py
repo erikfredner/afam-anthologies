@@ -22,8 +22,8 @@ def main():
         description="List authors exclusive to NAAL with counts of NAAL editions."
     )
     parser.add_argument(
-        'input_csv',
-        help='Path to input CSV (must include "author_name", "anthology_series", and "anthology_edition" columns)'
+        "input_csv",
+        help='Path to input CSV (must include "author_name", "anthology_series", and "anthology_edition" columns)',
     )
     args = parser.parse_args()
 
@@ -33,15 +33,15 @@ def main():
     naal_editions = {}
     nafam_authors = set()
     try:
-        with open(args.input_csv, newline='', encoding='utf-8') as f:
+        with open(args.input_csv, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
-            for col in ('author_name', 'anthology_series', 'anthology_edition'):
+            for col in ("author_name", "anthology_series", "anthology_edition"):
                 if col not in reader.fieldnames:
                     sys.exit(f"ERROR: Expected column '{col}' in {args.input_csv}")
             for row in reader:
-                author = row['author_name'].strip()
-                series = row['anthology_series'].strip()
-                edition = row['anthology_edition'].strip()
+                author = row["author_name"].strip()
+                series = row["anthology_series"].strip()
+                edition = row["anthology_edition"].strip()
                 if series == NAAL:
                     naal_editions.setdefault(author, set()).add(edition)
                 elif series == NAFAM:
@@ -50,9 +50,11 @@ def main():
         sys.exit(f"ERROR: File not found: {args.input_csv}")
 
     # Filter authors exclusive to NAAL and count editions
-    exclusive = {author: len(editions)
-                 for author, editions in naal_editions.items()
-                 if author not in nafam_authors}
+    exclusive = {
+        author: len(editions)
+        for author, editions in naal_editions.items()
+        if author not in nafam_authors
+    }
 
     if not exclusive:
         print("")
@@ -71,5 +73,5 @@ def main():
     print(", ".join(entries))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

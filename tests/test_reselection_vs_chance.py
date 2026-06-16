@@ -32,12 +32,48 @@ def make_raw(rows: list[dict]) -> pd.DataFrame:
 def test_compute_per_edition_stats_uses_seen_sets_and_birth_year_pool():
     raw = make_raw(
         [
-            {"edition_id": 1, "anthology_publication_year": 2000, "work_id": "w1", "author_id": "a1", "author_birth_year": 1900},
-            {"edition_id": 1, "anthology_publication_year": 2000, "work_id": "w2", "author_id": "a2", "author_birth_year": 1910},
-            {"edition_id": 2, "anthology_publication_year": 2010, "work_id": "w1", "author_id": "a1", "author_birth_year": 1900},
-            {"edition_id": 2, "anthology_publication_year": 2010, "work_id": "w3", "author_id": "a3", "author_birth_year": 1920},
-            {"edition_id": 3, "anthology_publication_year": 2020, "work_id": "w2", "author_id": "a2", "author_birth_year": 1910},
-            {"edition_id": 3, "anthology_publication_year": 2020, "work_id": "w4", "author_id": "a4", "author_birth_year": 1980},
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "work_id": "w1",
+                "author_id": "a1",
+                "author_birth_year": 1900,
+            },
+            {
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+                "work_id": "w2",
+                "author_id": "a2",
+                "author_birth_year": 1910,
+            },
+            {
+                "edition_id": 2,
+                "anthology_publication_year": 2010,
+                "work_id": "w1",
+                "author_id": "a1",
+                "author_birth_year": 1900,
+            },
+            {
+                "edition_id": 2,
+                "anthology_publication_year": 2010,
+                "work_id": "w3",
+                "author_id": "a3",
+                "author_birth_year": 1920,
+            },
+            {
+                "edition_id": 3,
+                "anthology_publication_year": 2020,
+                "work_id": "w2",
+                "author_id": "a2",
+                "author_birth_year": 1910,
+            },
+            {
+                "edition_id": 3,
+                "anthology_publication_year": 2020,
+                "work_id": "w4",
+                "author_id": "a4",
+                "author_birth_year": 1980,
+            },
         ]
     )
 

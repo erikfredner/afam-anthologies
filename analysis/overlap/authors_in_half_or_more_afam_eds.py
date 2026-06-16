@@ -31,18 +31,17 @@ def format_reselections(row: pd.Series) -> str:
 
 
 def build_table(df: pd.DataFrame) -> pd.DataFrame:
-    df = (
-        df.assign(author_sort_key=df["author_name"].map(author_sort_key))
-        .sort_values(
-            ["edition_count", "author_sort_key"],
-            ascending=[False, True],
-        )
+    df = df.assign(author_sort_key=df["author_name"].map(author_sort_key)).sort_values(
+        ["edition_count", "author_sort_key"],
+        ascending=[False, True],
     )
-    result = pd.DataFrame({
-        "Author":       df["author_name"],
-        "Selections":   df["edition_count"],
-        "Reselections": df.apply(format_reselections, axis=1),
-    })
+    result = pd.DataFrame(
+        {
+            "Author": df["author_name"],
+            "Selections": df["edition_count"],
+            "Reselections": df.apply(format_reselections, axis=1),
+        }
+    )
     return result.reset_index(drop=True)
 
 

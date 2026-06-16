@@ -5,6 +5,7 @@ from typing import Dict
 from afam import DATA_DIR
 from afam.data import load_csv
 
+
 def bucket(c: int) -> str:
     """Assign a prior appearance count to a frequency bucket."""
     if c == 0:
@@ -13,6 +14,7 @@ def bucket(c: int) -> str:
         return str(c)
     else:
         return "6+"
+
 
 def main() -> None:
     """Compute inclusion recall by prior appearance frequency."""
@@ -23,12 +25,12 @@ def main() -> None:
     parser.add_argument(
         "--save-csv",
         action="store_true",
-        help="Save output tables to CSV in data/ directory instead of printing."
+        help="Save output tables to CSV in data/ directory instead of printing.",
     )
     parser.add_argument(
         "--only-root-works",
         action="store_true",
-        help="Limit work-level analysis to works without parent works (parent_work_title empty)."
+        help="Limit work-level analysis to works without parent works (parent_work_title empty).",
     )
     args = parser.parse_args()
     # Load data
@@ -42,7 +44,10 @@ def main() -> None:
 
     # Identify NAAAL 1996 works
     mask_naaal1996 = (
-        (df["anthology_series"] == "The Norton Anthology of African American Literature")
+        (
+            df["anthology_series"]
+            == "The Norton Anthology of African American Literature"
+        )
         & (df["anthology_edition"] == "1")
         & (df["anthology_year"] == 1996)
     )
@@ -57,7 +62,9 @@ def main() -> None:
     # Prepare per-work summaries (optionally only root works)
     all_work_ids = sorted(root_work_ids)
     work_df = pd.DataFrame({"work_id": all_work_ids})
-    work_df["prior_count"] = work_df["work_id"].map(lambda w: freq.get(w, 0)).astype(int)
+    work_df["prior_count"] = (
+        work_df["work_id"].map(lambda w: freq.get(w, 0)).astype(int)
+    )
     work_df["in_naaal1996"] = work_df["work_id"].isin(works_naaal1996).astype(int)
 
     # Compute cumulative recall by threshold: n or more prior appearances for works
@@ -68,12 +75,14 @@ def main() -> None:
         total = masked["work_id"].nunique()
         in_naaal = masked["in_naaal1996"].sum()
         pct = 100 * in_naaal / total if total > 0 else 0.0
-        result_rows.append({
-            "bucket": f"{t}+",
-            "works_with_prior": total,
-            "works_in_naaal": in_naaal,
-            "recall_pct": pct,
-        })
+        result_rows.append(
+            {
+                "bucket": f"{t}+",
+                "works_with_prior": total,
+                "works_in_naaal": in_naaal,
+                "recall_pct": pct,
+            }
+        )
     result = pd.DataFrame(result_rows)
 
     # Compute author-level bucketed recall
@@ -84,7 +93,9 @@ def main() -> None:
     # Prepare per-author summaries
     all_authors = df["work_author"].unique()
     author_df = pd.DataFrame({"author": all_authors})
-    author_df["prior_count"] = author_df["author"].map(lambda a: freq_auth.get(a, 0)).astype(int)
+    author_df["prior_count"] = (
+        author_df["author"].map(lambda a: freq_auth.get(a, 0)).astype(int)
+    )
     author_df["in_naaal1996"] = author_df["author"].isin(authors_naaal1996).astype(int)
 
     # Compute cumulative recall by threshold: n or more prior appearances for authors
@@ -94,12 +105,14 @@ def main() -> None:
         total = masked["author"].nunique()
         in_naaal = masked["in_naaal1996"].sum()
         pct = 100 * in_naaal / total if total > 0 else 0.0
-        author_result_rows.append({
-            "bucket": f"{t}+",
-            "authors_with_prior": total,
-            "authors_in_naaal": in_naaal,
-            "recall_pct": pct,
-        })
+        author_result_rows.append(
+            {
+                "bucket": f"{t}+",
+                "authors_with_prior": total,
+                "authors_in_naaal": in_naaal,
+                "recall_pct": pct,
+            }
+        )
     author_result = pd.DataFrame(author_result_rows)
 
     # Handle CSV saving mode
@@ -143,11 +156,20 @@ def main() -> None:
     rec_high = recall_dict.get("6+", 0.0)
     rec_low = recall_dict.get("1+", 0.0)
     print()
-    print(f"* Works with 6+ earlier shout-outs had a **{rec_high:.1f}%** chance of appearing in NAAAL 1996.")
-    print(f"* By contrast, works with 1+ earlier shout-outs had only **{rec_low:.1f}%** representation.")
+    print(
+        f"* Works with 6+ earlier shout-outs had a **{rec_high:.1f}%** chance of appearing in NAAAL 1996."
+    )
+    print(
+        f"* By contrast, works with 1+ earlier shout-outs had only **{rec_low:.1f}%** representation."
+    )
     # Print author table
     print()
-    auth_cols = ["Bucket", "Authors w/ prior count", "Authors in NAAAL 1996", "Recall (%)"]
+    auth_cols = [
+        "Bucket",
+        "Authors w/ prior count",
+        "Authors in NAAAL 1996",
+        "Recall (%)",
+    ]
     auth_col_widths = [len(c) for c in auth_cols]
     auth_header = (
         f"{auth_cols[0].ljust(auth_col_widths[0])} | "
@@ -174,8 +196,13 @@ def main() -> None:
     auth_rec_high = auth_rec_dict.get("6+", 0.0)
     auth_rec_low = auth_rec_dict.get("1+", 0.0)
     print()
-    print(f"* Authors with 6+ earlier shout-outs had a **{auth_rec_high:.1f}%** chance of appearing in NAAAL 1996.")
-    print(f"* By contrast, authors with 1+ earlier shout-outs had only **{auth_rec_low:.1f}%** representation.")
+    print(
+        f"* Authors with 6+ earlier shout-outs had a **{auth_rec_high:.1f}%** chance of appearing in NAAAL 1996."
+    )
+    print(
+        f"* By contrast, authors with 1+ earlier shout-outs had only **{auth_rec_low:.1f}%** representation."
+    )
+
 
 if __name__ == "__main__":
     main()

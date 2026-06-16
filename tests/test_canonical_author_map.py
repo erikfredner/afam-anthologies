@@ -134,7 +134,11 @@ def test_assign_canonical_work_rolls_child_to_top_level_parent():
     result = assign_canonical_work(df)
 
     assert list(result["canonical_work_id"]) == ["root", "root", "root"]
-    assert list(result["canonical_work_title"]) == ["Long Book", "Long Book", "Long Book"]
+    assert list(result["canonical_work_title"]) == [
+        "Long Book",
+        "Long Book",
+        "Long Book",
+    ]
 
 
 def test_compute_author_metrics_entropy_and_signature_share():
@@ -212,12 +216,50 @@ def test_parent_work_rule_aggregates_excerpt_variants():
 def test_choose_exemplars_selects_requested_authors_in_fixed_order():
     metrics_df = pd.DataFrame(
         [
-            {"author_id": "1", "author_name": "Langston Hughes", "anthology_appearances": 20, "signature_work_share": 0.20, "signature_work_title": "Mother to Son"},
-            {"author_id": "2", "author_name": "Alain Locke", "anthology_appearances": 18, "signature_work_share": 0.80, "signature_work_title": "The New Negro <essay>", "total_work_selections": 25},
-            {"author_id": "22", "author_name": "Alain Locke", "anthology_appearances": 1, "signature_work_share": 1.00, "signature_work_title": "The New Negro <edited collection>", "total_work_selections": 1},
-            {"author_id": "3", "author_name": "Olaudah Equiano", "anthology_appearances": 22, "signature_work_share": 0.30, "signature_work_title": "The Interesting Narrative"},
-            {"author_id": "33", "author_name": "Phillis Wheatley", "anthology_appearances": 24, "signature_work_share": 0.52, "signature_work_title": "Poems on Various Subjects, Religious and Moral"},
-            {"author_id": "4", "author_name": "Gwendolyn Brooks", "anthology_appearances": 16, "signature_work_share": 0.08, "signature_work_title": "We Real Cool"},
+            {
+                "author_id": "1",
+                "author_name": "Langston Hughes",
+                "anthology_appearances": 20,
+                "signature_work_share": 0.20,
+                "signature_work_title": "Mother to Son",
+            },
+            {
+                "author_id": "2",
+                "author_name": "Alain Locke",
+                "anthology_appearances": 18,
+                "signature_work_share": 0.80,
+                "signature_work_title": "The New Negro <essay>",
+                "total_work_selections": 25,
+            },
+            {
+                "author_id": "22",
+                "author_name": "Alain Locke",
+                "anthology_appearances": 1,
+                "signature_work_share": 1.00,
+                "signature_work_title": "The New Negro <edited collection>",
+                "total_work_selections": 1,
+            },
+            {
+                "author_id": "3",
+                "author_name": "Olaudah Equiano",
+                "anthology_appearances": 22,
+                "signature_work_share": 0.30,
+                "signature_work_title": "The Interesting Narrative",
+            },
+            {
+                "author_id": "33",
+                "author_name": "Phillis Wheatley",
+                "anthology_appearances": 24,
+                "signature_work_share": 0.52,
+                "signature_work_title": "Poems on Various Subjects, Religious and Moral",
+            },
+            {
+                "author_id": "4",
+                "author_name": "Gwendolyn Brooks",
+                "anthology_appearances": 16,
+                "signature_work_share": 0.08,
+                "signature_work_title": "We Real Cool",
+            },
         ]
     )
 
@@ -263,7 +305,10 @@ def test_build_label_text_uses_custom_short_titles_for_target_authors():
             "signature_work_title": "Poems on Various Subjects, Religious and Moral",
         }
     )
-    assert build_label_text(wheatley_row) == r'Wheatley, $\it{Poems\ on\ Various\ Subjects}$'
+    assert (
+        build_label_text(wheatley_row)
+        == r"Wheatley, $\it{Poems\ on\ Various\ Subjects}$"
+    )
 
 
 def test_smoke_writes_metrics_csv_and_png(tmp_path: Path):

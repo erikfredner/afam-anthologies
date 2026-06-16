@@ -110,8 +110,7 @@ def compute_snapshots(long: pd.DataFrame) -> pd.DataFrame:
     }
     work_col = "work_id" if "work_id" in long.columns else "norm_title"
     ek_to_works: dict[str, frozenset] = {
-        ek: frozenset(grp[work_col].unique())
-        for ek, grp in long.groupby("edition_key")
+        ek: frozenset(grp[work_col].unique()) for ek, grp in long.groupby("edition_key")
     }
 
     # Edition year lookup
@@ -132,7 +131,9 @@ def compute_snapshots(long: pd.DataFrame) -> pd.DataFrame:
         # Add pairs: each new edition vs. all prior editions
         for new_ek in new_eks:
             for prior_ek in editions_so_far:
-                running_author.append(jaccard(ek_to_authors[new_ek], ek_to_authors[prior_ek]))
+                running_author.append(
+                    jaccard(ek_to_authors[new_ek], ek_to_authors[prior_ek])
+                )
                 running_work.append(jaccard(ek_to_works[new_ek], ek_to_works[prior_ek]))
 
         # Add pairs within this year's new editions
@@ -176,11 +177,19 @@ def plot_snapshots(df: pd.DataFrame, out_path: Path) -> None:
     years = df["year"].values
 
     # Author Jaccard — blue
-    ax.plot(years, df["author_median"], color=C_BLUE, lw=2, label="Author Jaccard (median ± IQR)")
+    ax.plot(
+        years,
+        df["author_median"],
+        color=C_BLUE,
+        lw=2,
+        label="Author Jaccard (median ± IQR)",
+    )
     ax.fill_between(years, df["author_p25"], df["author_p75"], color=C_BLUE, alpha=0.18)
 
     # Work Jaccard — red
-    ax.plot(years, df["work_median"], color=C_RED, lw=2, label="Work Jaccard (median ± IQR)")
+    ax.plot(
+        years, df["work_median"], color=C_RED, lw=2, label="Work Jaccard (median ± IQR)"
+    )
     ax.fill_between(years, df["work_p25"], df["work_p75"], color=C_RED, alpha=0.18)
 
     # Reference line

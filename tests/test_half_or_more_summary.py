@@ -27,7 +27,7 @@ def make_appearances() -> pd.DataFrame:
             {"work_id": 1, "parent_id": None, "edition_id": 1, "author_id": "a1"},
             {"work_id": 1, "parent_id": None, "edition_id": 2, "author_id": "a1"},
             {"work_id": 1, "parent_id": None, "edition_id": 3, "author_id": "a1"},
-            {"work_id": 2, "parent_id": 1,    "edition_id": 4, "author_id": "a1"},
+            {"work_id": 2, "parent_id": 1, "edition_id": 4, "author_id": "a1"},
             {"work_id": 3, "parent_id": None, "edition_id": 1, "author_id": None},
             {"work_id": 4, "parent_id": None, "edition_id": 2, "author_id": "a2"},
         ]
@@ -67,7 +67,7 @@ def test_compute_summary_root_variant_loses_excerpt_only_authors() -> None:
     df = pd.DataFrame(
         [
             {"work_id": 1, "parent_id": None, "edition_id": 1, "author_id": "a1"},
-            {"work_id": 2, "parent_id": 1,    "edition_id": 2, "author_id": "a2"},
+            {"work_id": 2, "parent_id": 1, "edition_id": 2, "author_id": "a2"},
         ]
     )
     summary, _ = compute_summary(df)

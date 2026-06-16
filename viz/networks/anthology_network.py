@@ -133,7 +133,9 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
     }
     vmin, vmax = min(author_strength.values()), max(author_strength.values())
     norm = colors.Normalize(vmin=vmin, vmax=vmax)
-    author_colours = [colors.to_hex(viridis(norm(author_strength[n]))) for n in author_nodes]
+    author_colours = [
+        colors.to_hex(viridis(norm(author_strength[n]))) for n in author_nodes
+    ]
 
     # anthology nodes
     nx.draw_networkx_nodes(
@@ -228,8 +230,8 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
         arrowprops=dict(
             arrowstyle="-",
             lw=0.5,
-            color="white",      # distinct from grey edges
-            shrinkA=5,          # increased to avoid overlap (silences warning)
+            color="white",  # distinct from grey edges
+            shrinkA=5,  # increased to avoid overlap (silences warning)
             shrinkB=5,
         ),
     )
@@ -242,7 +244,15 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
 
     # legend
     handles = [
-        plt.Line2D([], [], marker="s", linestyle="", color=series_palette[s], markersize=8, label=s)
+        plt.Line2D(
+            [],
+            [],
+            marker="s",
+            linestyle="",
+            color=series_palette[s],
+            markersize=8,
+            label=s,
+        )
         for s in series_palette
     ]
     ax.legend(handles=handles, loc="upper right", frameon=False)

@@ -226,7 +226,9 @@ def main() -> None:
 
     print(f"\nRetention rows: {len(df)} subsequent editions")
     if not df.empty:
-        print(df[["edition_key", "year", "author_pct", "work_pct"]].to_string(index=False))
+        print(
+            df[["edition_key", "year", "author_pct", "work_pct"]].to_string(index=False)
+        )
 
     out_path = OUT_DIR / "retention_from_1929.png"
     plot_retention(df, out_path)

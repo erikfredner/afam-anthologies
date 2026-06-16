@@ -15,7 +15,9 @@ from retention_from_1941 import compute_retention  # noqa: E402
 
 
 def make_long(rows):
-    return pd.DataFrame(rows, columns=["edition_key", "ek_year", "author_id", "norm_title"])
+    return pd.DataFrame(
+        rows, columns=["edition_key", "ek_year", "author_id", "norm_title"]
+    )
 
 
 # ── Tests ──────────────────────────────────────────────────────────────────────

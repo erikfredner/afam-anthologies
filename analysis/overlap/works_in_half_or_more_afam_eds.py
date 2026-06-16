@@ -55,19 +55,22 @@ def build_table(df: pd.DataFrame) -> pd.DataFrame:
         )
         .reset_index()
     )
-    grouped = (
-        grouped.assign(author_sort_key=grouped["author_name"].map(author_sort_key))
-        .sort_values(
-            ["edition_count", "author_sort_key", "work_title"],
-            ascending=[False, True, True],
-        )
+    grouped = grouped.assign(
+        author_sort_key=grouped["author_name"].map(author_sort_key)
+    ).sort_values(
+        ["edition_count", "author_sort_key", "work_title"],
+        ascending=[False, True, True],
     )
-    result = pd.DataFrame({
-        "Work":         grouped.apply(lambda r: f'"{r["work_title"]}" by {r["author_name"]}', axis=1),
-        "Selections":   grouped["edition_count"],
-        "Coalesced":    grouped["coalesced_edition_count"],
-        "Reselections": grouped.apply(format_reselections, axis=1),
-    })
+    result = pd.DataFrame(
+        {
+            "Work": grouped.apply(
+                lambda r: f'"{r["work_title"]}" by {r["author_name"]}', axis=1
+            ),
+            "Selections": grouped["edition_count"],
+            "Coalesced": grouped["coalesced_edition_count"],
+            "Reselections": grouped.apply(format_reselections, axis=1),
+        }
+    )
     return result.reset_index(drop=True)
 
 

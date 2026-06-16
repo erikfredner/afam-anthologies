@@ -42,14 +42,26 @@ TREND_COLOR = "#c0392b"
 
 def build_panels(weight: str) -> list[tuple[str, str, str]]:
     return [
-        ("authors", f"fraction_repeat_{weight}",
-         "Authors: share of edition appearing in any prior anthology"),
-        ("authors", f"fraction_frequent_canon_{weight}",
-         "Authors: share of edition with ≥3 prior anthology appearances"),
-        ("works", f"fraction_repeat_{weight}",
-         "Works: share of edition appearing in any prior anthology"),
-        ("works", f"fraction_frequent_canon_{weight}",
-         "Works: share of edition with ≥3 prior anthology appearances"),
+        (
+            "authors",
+            f"fraction_repeat_{weight}",
+            "Authors: share of edition appearing in any prior anthology",
+        ),
+        (
+            "authors",
+            f"fraction_frequent_canon_{weight}",
+            "Authors: share of edition with ≥3 prior anthology appearances",
+        ),
+        (
+            "works",
+            f"fraction_repeat_{weight}",
+            "Works: share of edition appearing in any prior anthology",
+        ),
+        (
+            "works",
+            f"fraction_frequent_canon_{weight}",
+            "Works: share of edition with ≥3 prior anthology appearances",
+        ),
     ]
 
 
@@ -58,14 +70,14 @@ WEIGHT_LABELS = {
         "y_authors": "Share of authors in edition\n(by count, not page span)",
         "y_works": "Share of works in edition\n(by count, not page span)",
         "subtitle": "Slot-weighted: each author or work in the edition counts "
-                    "as one — not weighted by pages.",
+        "as one — not weighted by pages.",
         "default_out": "predictability_repeat_focus.png",
     },
     "page": {
         "y_authors": "Share of edition pages\nattributable to authors",
         "y_works": "Share of edition pages\nattributable to works",
         "subtitle": "Page-weighted: each author/work contributes in proportion "
-                    "to their TOC page span in the edition.",
+        "to their TOC page span in the edition.",
         "default_out": "predictability_repeat_focus_pages.png",
     },
 }
@@ -107,9 +119,7 @@ def annotate_trend(ax: plt.Axes, years: np.ndarray, values: np.ndarray) -> None:
 
 def draw_panel(ax: plt.Axes, df: pd.DataFrame, metric: str, title: str) -> None:
     overall = (
-        df[df["subgroup_dim"] == "all"]
-        .sort_values("year")
-        .dropna(subset=[metric])
+        df[df["subgroup_dim"] == "all"].sort_values("year").dropna(subset=[metric])
     )
 
     ax.plot(

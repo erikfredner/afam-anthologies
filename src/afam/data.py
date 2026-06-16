@@ -67,7 +67,10 @@ def assign_edition_key_underscore(df: pd.DataFrame) -> pd.DataFrame:
     out["edition_key"] = [
         f"{sid}_{ed}" if str(sid).strip() else aid
         for sid, ed, aid in zip(
-            out["series_id"], out["anthology_edition"], out["anthology_id"], strict=False
+            out["series_id"],
+            out["anthology_edition"],
+            out["anthology_id"],
+            strict=False,
         )
     ]
     return out

@@ -16,16 +16,23 @@ import argparse
 import csv
 import sys
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description=("List works appearing in all editions of the Norton Anthology of African American Literature "
-                     "but never in the Norton Anthology of American Literature, grouped by author.")
+        description=(
+            "List works appearing in all editions of the Norton Anthology of African American Literature "
+            "but never in the Norton Anthology of American Literature, grouped by author."
+        )
     )
     parser.add_argument(
-        'input_csv', nargs='?', default='data/202504211659_works.csv',
-        help=('Path to input CSV (default: data/202504211659_works.csv; '
-              'must include "work_title", "author_name", "series_name", '
-              'and "anthology_edition" columns)')
+        "input_csv",
+        nargs="?",
+        default="data/202504211659_works.csv",
+        help=(
+            "Path to input CSV (default: data/202504211659_works.csv; "
+            'must include "work_title", "author_name", "series_name", '
+            'and "anthology_edition" columns)'
+        ),
     )
     args = parser.parse_args()
 
@@ -36,18 +43,23 @@ def main():
     nafam_works = set()
     naal_all_editions = set()
     try:
-        with open(args.input_csv, newline='', encoding='utf-8') as f:
+        with open(args.input_csv, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             # Validate required columns
-            for col in ('work_title', 'author_name', 'series_name', 'anthology_edition'):
+            for col in (
+                "work_title",
+                "author_name",
+                "series_name",
+                "anthology_edition",
+            ):
                 if col not in reader.fieldnames:
                     sys.exit(f"ERROR: Expected column '{col}' in {args.input_csv}")
             # Collect editions per work for NAAL and track any appearances in NAFAM
             for row in reader:
-                title = row['work_title'].strip()
-                author = row['author_name'].strip()
-                series = row['series_name'].strip()
-                edition = row['anthology_edition'].strip()
+                title = row["work_title"].strip()
+                author = row["author_name"].strip()
+                series = row["series_name"].strip()
+                edition = row["anthology_edition"].strip()
                 if series == NAAL:
                     naal_editions.setdefault((title, author), set()).add(edition)
                     naal_all_editions.add(edition)
@@ -69,17 +81,18 @@ def main():
 
     # Group works by author, sorting authors and titles alphabetically
     works_by_author = {}
-    for (title, author) in complete_works:
+    for title, author in complete_works:
         works_by_author.setdefault(author, []).append(title)
 
     groups = []
     for author in sorted(works_by_author, key=lambda x: x.lower()):
         titles = sorted(works_by_author[author], key=lambda t: t.lower())
-        quoted = ", ".join(f"\"{t}\"" for t in titles)
+        quoted = ", ".join(f'"{t}"' for t in titles)
         groups.append(f"{author}: {quoted}")
 
     # Print a single line with semicolon-separated author groups
     print("; ".join(groups))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

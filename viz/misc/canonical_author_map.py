@@ -28,7 +28,7 @@ CUSTOM_LABEL_TEXT = {
     "Langston Hughes": 'Hughes, "Mother to Son"',
     "Alain Locke": 'Locke, "The New Negro"',
     "Olaudah Equiano": r"Equiano, $\it{The\ Interesting\ Narrative}$",
-    "Phillis Wheatley": r'Wheatley, $\it{Poems\ on\ Various\ Subjects}$',
+    "Phillis Wheatley": r"Wheatley, $\it{Poems\ on\ Various\ Subjects}$",
 }
 LABEL_OFFSETS = {
     "Langston Hughes": (-10, 10),
@@ -58,9 +58,11 @@ def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
     """Collapse rows to anthology editions using series_id when available."""
     result = _stringify_columns(df, ["series_id", "anthology_edition", "anthology_id"])
     result["edition_key"] = result.apply(
-        lambda row: f"{row['series_id']}|{row['anthology_edition']}"
-        if row["series_id"].strip()
-        else row["anthology_id"],
+        lambda row: (
+            f"{row['series_id']}|{row['anthology_edition']}"
+            if row["series_id"].strip()
+            else row["anthology_id"]
+        ),
         axis=1,
     )
     return result
@@ -127,14 +129,23 @@ def explode_authors(df: pd.DataFrame) -> pd.DataFrame:
     df = _stringify_columns(df, ["author_ids", "author_names"])
     records: list[dict] = []
     for row in df.to_dict("records"):
-        author_ids = [part.strip() for part in row["author_ids"].split(",") if part.strip()]
-        author_names = [part.strip() for part in row["author_names"].split(";") if part.strip()]
+        author_ids = [
+            part.strip() for part in row["author_ids"].split(",") if part.strip()
+        ]
+        author_names = [
+            part.strip() for part in row["author_names"].split(";") if part.strip()
+        ]
         pairs: list[tuple[str, str]] = []
 
         if author_ids and author_names and len(author_ids) == len(author_names):
             pairs = list(zip(author_ids, author_names))
         elif len(author_ids) == 1 or len(author_names) == 1:
-            pairs = [(author_ids[0] if author_ids else "", author_names[0] if author_names else "")]
+            pairs = [
+                (
+                    author_ids[0] if author_ids else "",
+                    author_names[0] if author_names else "",
+                )
+            ]
 
         for author_id, author_name in pairs:
             if not author_id and not author_name:
@@ -206,7 +217,9 @@ def compute_author_metrics(selection_df: pd.DataFrame) -> pd.DataFrame:
                 "anthology_appearances": int(group["edition_key"].nunique()),
                 "total_work_selections": total_work_selections,
                 "distinct_works_selected": int(work_counts["work_id"].nunique()),
-                "work_selection_entropy": _shannon_entropy(work_counts["selection_count"]),
+                "work_selection_entropy": _shannon_entropy(
+                    work_counts["selection_count"]
+                ),
                 "signature_work_share": float(
                     signature_row["selection_count"] / total_work_selections
                 ),
@@ -264,7 +277,9 @@ def build_label_text(row: pd.Series) -> str:
     return f'{row["author_name"]}, "{row["signature_work_title"]}"'
 
 
-def make_plot(metrics_df: pd.DataFrame, exemplars_df: pd.DataFrame, out_path: Path) -> None:
+def make_plot(
+    metrics_df: pd.DataFrame, exemplars_df: pd.DataFrame, out_path: Path
+) -> None:
     """Render the canonical-author map."""
     fig, ax = plt.subplots(figsize=(10, 6), dpi=300)
 

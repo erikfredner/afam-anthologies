@@ -14,26 +14,29 @@ except ImportError:
 
 def load_data() -> pd.DataFrame:
     """Load author-work-form data and prepare edition keys."""
-    csv_path = DATA_DIR / '202505131423 author work form.csv'
+    csv_path = DATA_DIR / "202505131423 author work form.csv"
     df = pd.read_csv(csv_path, dtype=str, na_filter=False)
     # filter out authorless rows
     df = df[df["work_author"].str.strip() != ""]
     # Convert year to integer
-    df['anthology_year'] = df['anthology_year'].astype(int)
+    df["anthology_year"] = df["anthology_year"].astype(int)
     # Ensure parent_work_id exists
-    if 'parent_work_id' not in df.columns:
-        df['parent_work_id'] = ''
+    if "parent_work_id" not in df.columns:
+        df["parent_work_id"] = ""
     # Build unique anthology edition key
     # Use series_id + edition when series_id is present, else anthology_id
-    if 'series_id' not in df.columns:
-        df['series_id'] = ''
-    if 'anthology_edition' not in df.columns:
-        df['anthology_edition'] = ''
-    if 'anthology_id' not in df.columns:
-        df['anthology_id'] = ''
-    df['edition_key'] = df.apply(
-        lambda row: f"{row['series_id']}_{row['anthology_edition']}"
-        if row['series_id'] else row['anthology_id'],
+    if "series_id" not in df.columns:
+        df["series_id"] = ""
+    if "anthology_edition" not in df.columns:
+        df["anthology_edition"] = ""
+    if "anthology_id" not in df.columns:
+        df["anthology_id"] = ""
+    df["edition_key"] = df.apply(
+        lambda row: (
+            f"{row['series_id']}_{row['anthology_edition']}"
+            if row["series_id"]
+            else row["anthology_id"]
+        ),
         axis=1,
     )
     return df
@@ -42,52 +45,58 @@ def load_data() -> pd.DataFrame:
 def compute_author_stats(df: pd.DataFrame) -> pd.DataFrame:
     """Compute X, Y, number of works, and modal form per author."""
     records = []
-    for author_id, group in df.groupby('author_id'):
-        author_name = group['work_author'].iloc[0]
+    for author_id, group in df.groupby("author_id"):
+        author_name = group["work_author"].iloc[0]
         # Unique anthologies selecting this author
-        edition_keys = group['edition_key'].unique()
+        edition_keys = group["edition_key"].unique()
         X = len(edition_keys)
         # Count unique anthologies per work
-        work_counts = group.groupby('work_id')['edition_key'].nunique()
+        work_counts = group.groupby("work_id")["edition_key"].nunique()
         modal_work_count = work_counts.max() if not work_counts.empty else 0
         # Y = share of selections that repeat same work
         Y = modal_work_count / X if X > 0 else 0.0
         # Distinct works by author
-        num_works = group['work_id'].nunique()
+        num_works = group["work_id"].nunique()
         # Modal work form
-        form_counts = group['work_form'].value_counts()
-        modal_form = form_counts.idxmax() if not form_counts.empty else ''
-        records.append({
-            'author_id': author_id,
-            'author': author_name,
-            'X': X,
-            'Y': Y,
-            'num_works': num_works,
-            'modal_form': modal_form,
-        })
+        form_counts = group["work_form"].value_counts()
+        modal_form = form_counts.idxmax() if not form_counts.empty else ""
+        records.append(
+            {
+                "author_id": author_id,
+                "author": author_name,
+                "X": X,
+                "Y": Y,
+                "num_works": num_works,
+                "modal_form": modal_form,
+            }
+        )
     return pd.DataFrame.from_records(records)
 
 
-def make_plot(df_stats: pd.DataFrame, period: str, root_flag: str,
-              n_thresh: int, viz_dir: Path) -> None:
+def make_plot(
+    df_stats: pd.DataFrame, period: str, root_flag: str, n_thresh: int, viz_dir: Path
+) -> None:
     """Generate and save scatter plot for a given threshold and filter."""
-    x = df_stats['X'].to_numpy()
-    y = df_stats['Y'].to_numpy() * 100
-    sizes = df_stats['num_works'].to_numpy() * 30
-    forms = sorted(df_stats['modal_form'].unique())
-    cmap = plt.get_cmap('Dark2')
-    palette_colors = getattr(cmap, 'colors', [cmap(i/(len(forms)-1)) for i in range(len(forms))])
-    form_palette = dict(zip(forms, palette_colors[:len(forms)]))
+    x = df_stats["X"].to_numpy()
+    y = df_stats["Y"].to_numpy() * 100
+    sizes = df_stats["num_works"].to_numpy() * 30
+    forms = sorted(df_stats["modal_form"].unique())
+    cmap = plt.get_cmap("Dark2")
+    palette_colors = getattr(
+        cmap, "colors", [cmap(i / (len(forms) - 1)) for i in range(len(forms))]
+    )
+    form_palette = dict(zip(forms, palette_colors[: len(forms)]))
     # Create figure with specified size and resolution
     fig, ax = plt.subplots(figsize=(10, 6), dpi=600)
     # -------- Scatter ------------
     points = ax.scatter(
-        x, y,
+        x,
+        y,
         s=sizes,
         c=df_stats["modal_form"].map(form_palette),
         alpha=0.6,
         edgecolors="black",
-        linewidths=0.4
+        linewidths=0.4,
     )
     # Integer x-axis only
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -95,7 +104,9 @@ def make_plot(df_stats: pd.DataFrame, period: str, root_flag: str,
     ax.set_ylim(0, 110)
     ax.axhline(100, color="grey", alpha=0.3, lw=1, zorder=0)
     # Labels and title
-    ax.set_xlabel("Number of African American literature anthologies selecting an author")
+    ax.set_xlabel(
+        "Number of African American literature anthologies selecting an author"
+    )
     ax.set_ylabel("Percentage of selections repeating the same work")
     ax.set_title(
         "Author selection across African American literature anthologies"
@@ -107,24 +118,19 @@ def make_plot(df_stats: pd.DataFrame, period: str, root_flag: str,
     ax.legend(
         title="Most common form\n(size ∝ total works selected)",
         frameon=False,
-        loc="best"
+        loc="best",
     )
     # -------- Labels -------------
     # -------- Labels -------------
     texts = [
-        ax.text(
-            xi, yi + 1,
-            author,
-            fontsize=6,
-            color=form_palette[form]
-        )
+        ax.text(xi, yi + 1, author, fontsize=6, color=form_palette[form])
         for xi, yi, author, form in zip(
-            x, y, df_stats['author'], df_stats['modal_form']
+            x, y, df_stats["author"], df_stats["modal_form"]
         )
     ]
     # prevent overlaps (adjustText required)
     if adjust_text:
-        adjust_text(texts, arrowprops=dict(arrowstyle='-', lw=0.3, color='grey'))
+        adjust_text(texts, arrowprops=dict(arrowstyle="-", lw=0.3, color="grey"))
     # Save figure with layout and resolution
     out_path = viz_dir / f"author_spread_{period}_root{root_flag}_n{n_thresh}.png"
     fig.tight_layout()
@@ -134,12 +140,12 @@ def make_plot(df_stats: pd.DataFrame, period: str, root_flag: str,
 
 def main() -> None:
     df = load_data()
-    df_sub = df[df['parent_work_id'] == '']
+    df_sub = df[df["parent_work_id"] == ""]
     stats = compute_author_stats(df_sub)
-    stats_n = stats[stats['X'] >= 13]
-    make_plot(stats_n, 'all_time', 'root_only', 13, OUTPUT_DIR)
+    stats_n = stats[stats["X"] >= 13]
+    make_plot(stats_n, "all_time", "root_only", 13, OUTPUT_DIR)
     print("Created figure: viz/author_spread_all_time_rootroot_only_n13.png")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

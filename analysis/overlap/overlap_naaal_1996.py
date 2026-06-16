@@ -2,18 +2,23 @@
 Compute straight-up overlap between the first edition of The Norton Anthology of African American Literature (1996)
 and all anthologies published before 1996.
 """
+
 import argparse
 from typing import Set
 
 from afam.data import load_csv
+
 
 def main() -> None:
     """
     Load anthology data, compute overlap metrics, and print results.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--only-root-works", action="store_true",
-                        help="Limit work-level overlap analysis to works without parent works (parent_work_title empty).")
+    parser.add_argument(
+        "--only-root-works",
+        action="store_true",
+        help="Limit work-level overlap analysis to works without parent works (parent_work_title empty).",
+    )
     args = parser.parse_args()
     df = load_csv("202505121539 authors works.csv")
     # Ensure series_id column exists for edition_key logic
@@ -22,14 +27,20 @@ def main() -> None:
 
     # Create a helper column for unique edition identification
     df["edition_key"] = df.apply(
-        lambda row: f"{row['series_id']}_{row['anthology_edition']}"
-        if row["series_id"] else row["anthology_id"],
+        lambda row: (
+            f"{row['series_id']}_{row['anthology_edition']}"
+            if row["series_id"]
+            else row["anthology_id"]
+        ),
         axis=1,
     )
 
     # Identify NAAAL 1996 first edition
     mask_naaal_1996 = (
-        (df["anthology_series"] == "The Norton Anthology of African American Literature")
+        (
+            df["anthology_series"]
+            == "The Norton Anthology of African American Literature"
+        )
         & (df["anthology_edition"] == "1")
         & (df["anthology_year"] == "1996")
     )
@@ -100,6 +111,7 @@ def main() -> None:
         f"that were new to textbook audiences."
     )
     print(f"Author Summary: {summary_authors}")
+
 
 if __name__ == "__main__":
     main()

@@ -100,9 +100,11 @@ def _compute(df_raw: pd.DataFrame) -> pd.DataFrame:
         df.groupby("edition_key")["anthology_title"].first().to_dict()
     )
 
-    pairs = df[["edition_key", "author_id", "publication_year"]].drop_duplicates(
-        subset=["edition_key", "author_id"]
-    ).copy()
+    pairs = (
+        df[["edition_key", "author_id", "publication_year"]]
+        .drop_duplicates(subset=["edition_key", "author_id"])
+        .copy()
+    )
 
     edition_year = (
         df.groupby("edition_key")["publication_year"]
@@ -117,9 +119,10 @@ def _compute(df_raw: pd.DataFrame) -> pd.DataFrame:
     debut = (
         sorted_pairs.groupby("author_id", sort=False)
         .first()
-        .reset_index()
-        [["author_id", "edition_key", "edition_year"]]
-        .rename(columns={"edition_key": "debut_edition_key", "edition_year": "debut_year"})
+        .reset_index()[["author_id", "edition_key", "edition_year"]]
+        .rename(
+            columns={"edition_key": "debut_edition_key", "edition_year": "debut_year"}
+        )
     )
 
     author_ek_set: dict[str, set] = (
@@ -144,14 +147,16 @@ def _compute(df_raw: pd.DataFrame) -> pd.DataFrame:
             reselection_prob = reselection_count / subsequent_count
             ever_reselected = 1.0 if reselection_count > 0 else 0.0
 
-        records.append({
-            "debut_edition_key": debut_ek,
-            "debut_year": debut_yr,
-            "author_id": aid,
-            "reselection_prob": reselection_prob,
-            "ever_reselected": ever_reselected,
-            "subsequent_count": subsequent_count,
-        })
+        records.append(
+            {
+                "debut_edition_key": debut_ek,
+                "debut_year": debut_yr,
+                "author_id": aid,
+                "reselection_prob": reselection_prob,
+                "ever_reselected": ever_reselected,
+                "subsequent_count": subsequent_count,
+            }
+        )
 
     detail_df = pd.DataFrame(records)
 
@@ -163,22 +168,28 @@ def _compute(df_raw: pd.DataFrame) -> pd.DataFrame:
         n_with_subsequent = int((grp["subsequent_count"] > 0).sum())
 
         valid_prob = grp["reselection_prob"].dropna()
-        mean_reselection_prob = float(valid_prob.mean()) if len(valid_prob) > 0 else float("nan")
+        mean_reselection_prob = (
+            float(valid_prob.mean()) if len(valid_prob) > 0 else float("nan")
+        )
 
         valid_ever = grp["ever_reselected"].dropna()
-        ever_reselected_rate = float(valid_ever.mean()) if len(valid_ever) > 0 else float("nan")
+        ever_reselected_rate = (
+            float(valid_ever.mean()) if len(valid_ever) > 0 else float("nan")
+        )
 
         short_lbl = _short_label(debut_ek, int(debut_yr), ek_to_title)
 
-        agg_records.append({
-            "debut_edition_key": debut_ek,
-            "debut_year": int(debut_yr),
-            "n_debut_authors": n_debut_authors,
-            "n_with_subsequent": n_with_subsequent,
-            "mean_reselection_prob": mean_reselection_prob,
-            "ever_reselected_rate": ever_reselected_rate,
-            "short_label": short_lbl,
-        })
+        agg_records.append(
+            {
+                "debut_edition_key": debut_ek,
+                "debut_year": int(debut_yr),
+                "n_debut_authors": n_debut_authors,
+                "n_with_subsequent": n_with_subsequent,
+                "mean_reselection_prob": mean_reselection_prob,
+                "ever_reselected_rate": ever_reselected_rate,
+                "short_label": short_lbl,
+            }
+        )
 
     return (
         pd.DataFrame(agg_records)
@@ -276,7 +287,8 @@ def fig2_scatter(edition_df: pd.DataFrame, out_dir: Path) -> None:
     fig, ax = plt.subplots(figsize=(11, 7))
 
     ax.scatter(
-        x, y,
+        x,
+        y,
         s=bubble_area,
         color="#1f77b4",
         alpha=0.65,
@@ -313,7 +325,9 @@ def fig2_scatter(edition_df: pd.DataFrame, out_dir: Path) -> None:
     ax.axhline(0.5, color="gray", linestyle=":", lw=1.0, alpha=0.7, label="y = 0.5")
     ax.set_ylim(-0.05, 1.1)
     ax.set_xlabel("Debut year", fontsize=11)
-    ax.set_ylabel("Ever-reselected rate\n(fraction of debut authors ever reselected)", fontsize=11)
+    ax.set_ylabel(
+        "Ever-reselected rate\n(fraction of debut authors ever reselected)", fontsize=11
+    )
     ax.set_title(
         "How often were debut anthology authors reselected later?\n"
         "(bubble size = number of debut authors)",
@@ -324,8 +338,14 @@ def fig2_scatter(edition_df: pd.DataFrame, out_dir: Path) -> None:
 
     # Bubble size legend — combined with trend/reference labels, placed below plot
     for n_label in [1, 5, 20]:
-        ax.scatter([], [], s=n_label * 60, color="#1f77b4", alpha=0.65,
-                   label=f"N={n_label} debut authors")
+        ax.scatter(
+            [],
+            [],
+            s=n_label * 60,
+            color="#1f77b4",
+            alpha=0.65,
+            label=f"N={n_label} debut authors",
+        )
     ax.legend(
         frameon=False,
         fontsize=8,

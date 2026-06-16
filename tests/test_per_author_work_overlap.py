@@ -36,20 +36,56 @@ def test_cross_series_excludes_within_series_pair():
     """
     rows = [
         # NAAAL ed.1 (series_id=3, edition_id=16): A has W1, W3
-        {"author_id": 1, "author_name": "Author A", "work_id": 1, "work_title": "B work",
-         "edition_id": 16, "series_id": 3},
-        {"author_id": 1, "author_name": "Author A", "work_id": 3, "work_title": "shared in series",
-         "edition_id": 16, "series_id": 3},
+        {
+            "author_id": 1,
+            "author_name": "Author A",
+            "work_id": 1,
+            "work_title": "B work",
+            "edition_id": 16,
+            "series_id": 3,
+        },
+        {
+            "author_id": 1,
+            "author_name": "Author A",
+            "work_id": 3,
+            "work_title": "shared in series",
+            "edition_id": 16,
+            "series_id": 3,
+        },
         # NAAAL ed.2 (series_id=3, edition_id=17): A has W2, W3
-        {"author_id": 1, "author_name": "Author A", "work_id": 2, "work_title": "A work",
-         "edition_id": 17, "series_id": 3},
-        {"author_id": 1, "author_name": "Author A", "work_id": 3, "work_title": "shared in series",
-         "edition_id": 17, "series_id": 3},
+        {
+            "author_id": 1,
+            "author_name": "Author A",
+            "work_id": 2,
+            "work_title": "A work",
+            "edition_id": 17,
+            "series_id": 3,
+        },
+        {
+            "author_id": 1,
+            "author_name": "Author A",
+            "work_id": 3,
+            "work_title": "shared in series",
+            "edition_id": 17,
+            "series_id": 3,
+        },
         # Standalone (no series, edition_id=60): A has W1, W2
-        {"author_id": 1, "author_name": "Author A", "work_id": 1, "work_title": "B work",
-         "edition_id": 60, "series_id": None},
-        {"author_id": 1, "author_name": "Author A", "work_id": 2, "work_title": "A work",
-         "edition_id": 60, "series_id": None},
+        {
+            "author_id": 1,
+            "author_name": "Author A",
+            "work_id": 1,
+            "work_title": "B work",
+            "edition_id": 60,
+            "series_id": None,
+        },
+        {
+            "author_id": 1,
+            "author_name": "Author A",
+            "work_id": 2,
+            "work_title": "A work",
+            "edition_id": 60,
+            "series_id": None,
+        },
     ]
     out = compute(make_df(rows))
     assert len(out) == 1
@@ -74,10 +110,22 @@ def test_cross_series_excludes_within_series_pair():
 def test_same_series_only_author_excluded():
     """Author appearing only in two same-series editions has no cross-series pair."""
     rows = [
-        {"author_id": 2, "author_name": "Author B", "work_id": 10, "work_title": "X",
-         "edition_id": 16, "series_id": 3},
-        {"author_id": 2, "author_name": "Author B", "work_id": 11, "work_title": "Y",
-         "edition_id": 17, "series_id": 3},
+        {
+            "author_id": 2,
+            "author_name": "Author B",
+            "work_id": 10,
+            "work_title": "X",
+            "edition_id": 16,
+            "series_id": 3,
+        },
+        {
+            "author_id": 2,
+            "author_name": "Author B",
+            "work_id": 11,
+            "work_title": "Y",
+            "edition_id": 17,
+            "series_id": 3,
+        },
     ]
     out = compute(make_df(rows))
     assert len(out) == 0
@@ -86,8 +134,14 @@ def test_same_series_only_author_excluded():
 def test_single_edition_author_excluded():
     """Author appearing in only one edition has no pairs at all."""
     rows = [
-        {"author_id": 3, "author_name": "Author C", "work_id": 20, "work_title": "Z",
-         "edition_id": 16, "series_id": 3},
+        {
+            "author_id": 3,
+            "author_name": "Author C",
+            "work_id": 20,
+            "work_title": "Z",
+            "edition_id": 16,
+            "series_id": 3,
+        },
     ]
     out = compute(make_df(rows))
     assert len(out) == 0
@@ -97,10 +151,22 @@ def test_two_standalones_are_cross_series():
     """Two standalone editions (both with series_id=None) are treated as different
     singleton series, so the pair is kept."""
     rows = [
-        {"author_id": 4, "author_name": "Author D", "work_id": 30, "work_title": "shared",
-         "edition_id": 60, "series_id": None},
-        {"author_id": 4, "author_name": "Author D", "work_id": 30, "work_title": "shared",
-         "edition_id": 61, "series_id": None},
+        {
+            "author_id": 4,
+            "author_name": "Author D",
+            "work_id": 30,
+            "work_title": "shared",
+            "edition_id": 60,
+            "series_id": None,
+        },
+        {
+            "author_id": 4,
+            "author_name": "Author D",
+            "work_id": 30,
+            "work_title": "shared",
+            "edition_id": 61,
+            "series_id": None,
+        },
     ]
     out = compute(make_df(rows))
     assert len(out) == 1
@@ -120,16 +186,26 @@ def test_top_work_counts_only_cross_series_pairs():
     """
     rows = []
     for eid in (16, 17, 13):  # NAAAL editions
-        rows.append({
-            "author_id": 5, "author_name": "Author E",
-            "work_id": 100, "work_title": "Everywhere",
-            "edition_id": eid, "series_id": 3,
-        })
-    rows.append({
-        "author_id": 5, "author_name": "Author E",
-        "work_id": 100, "work_title": "Everywhere",
-        "edition_id": 60, "series_id": None,
-    })
+        rows.append(
+            {
+                "author_id": 5,
+                "author_name": "Author E",
+                "work_id": 100,
+                "work_title": "Everywhere",
+                "edition_id": eid,
+                "series_id": 3,
+            }
+        )
+    rows.append(
+        {
+            "author_id": 5,
+            "author_name": "Author E",
+            "work_id": 100,
+            "work_title": "Everywhere",
+            "edition_id": 60,
+            "series_id": None,
+        }
+    )
     out = compute(make_df(rows))
     assert len(out) == 1
     row = out.iloc[0]
@@ -142,14 +218,26 @@ def test_top_work_counts_only_cross_series_pairs():
 def test_birth_and_death_year_passthrough():
     """Birth and death year are surfaced as ints when present, None when null."""
     rows = [
-        {"author_id": 6, "author_name": "Known Years",
-         "author_birth_year": 1900, "author_death_year": 1980,
-         "work_id": 200, "work_title": "x",
-         "edition_id": 16, "series_id": 3},
-        {"author_id": 6, "author_name": "Known Years",
-         "author_birth_year": 1900, "author_death_year": 1980,
-         "work_id": 200, "work_title": "x",
-         "edition_id": 60, "series_id": None},
+        {
+            "author_id": 6,
+            "author_name": "Known Years",
+            "author_birth_year": 1900,
+            "author_death_year": 1980,
+            "work_id": 200,
+            "work_title": "x",
+            "edition_id": 16,
+            "series_id": 3,
+        },
+        {
+            "author_id": 6,
+            "author_name": "Known Years",
+            "author_birth_year": 1900,
+            "author_death_year": 1980,
+            "work_id": 200,
+            "work_title": "x",
+            "edition_id": 60,
+            "series_id": None,
+        },
     ]
     out = compute(make_df(rows))
     row = out.iloc[0]
@@ -160,12 +248,22 @@ def test_birth_and_death_year_passthrough():
 def test_overlap_can_be_zero():
     """If two cross-series editions share no works, overlap=0 is recorded."""
     rows = [
-        {"author_id": 7, "author_name": "No Overlap",
-         "work_id": 300, "work_title": "only here",
-         "edition_id": 16, "series_id": 3},
-        {"author_id": 7, "author_name": "No Overlap",
-         "work_id": 301, "work_title": "only there",
-         "edition_id": 60, "series_id": None},
+        {
+            "author_id": 7,
+            "author_name": "No Overlap",
+            "work_id": 300,
+            "work_title": "only here",
+            "edition_id": 16,
+            "series_id": 3,
+        },
+        {
+            "author_id": 7,
+            "author_name": "No Overlap",
+            "work_id": 301,
+            "work_title": "only there",
+            "edition_id": 60,
+            "series_id": None,
+        },
     ]
     out = compute(make_df(rows))
     assert len(out) == 1

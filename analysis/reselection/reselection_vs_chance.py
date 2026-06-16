@@ -78,10 +78,7 @@ def precompute_birth_years(
 
 def expand_authors(df: pd.DataFrame) -> dict[object, set]:
     """Return {edition_id: set of author_ids}."""
-    return {
-        eid: set(g["author_id"].dropna())
-        for eid, g in df.groupby("edition_id")
-    }
+    return {eid: set(g["author_id"].dropna()) for eid, g in df.groupby("edition_id")}
 
 
 # ── Edition ordering ──────────────────────────────────────────────────────────
@@ -205,7 +202,9 @@ def run_stats(stats: pd.DataFrame) -> dict:
     )
     # Authors: observed > expected → test whether above chance
     binom_a_p = (
-        binomtest(total_a_resel, total_a_slots, p=a_chance, alternative="greater").pvalue
+        binomtest(
+            total_a_resel, total_a_slots, p=a_chance, alternative="greater"
+        ).pvalue
         if total_a_slots and not pd.isna(a_chance)
         else float("nan")
     )

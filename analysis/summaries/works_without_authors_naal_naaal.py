@@ -32,13 +32,15 @@ ROOT_FILTER = "WHERE w.parent_id IS NULL"
 
 
 def print_edition_table(group: pd.DataFrame, anthology: str) -> None:
-    display = pd.DataFrame({
-        "Year":      group["year"],
-        "Edition":   group["edition_number"],
-        "Total":     group["total_works"],
-        "No Author": group["works_without_author"],
-        "%":         group["pct_without_author"],
-    })
+    display = pd.DataFrame(
+        {
+            "Year": group["year"],
+            "Edition": group["edition_number"],
+            "Total": group["total_works"],
+            "No Author": group["works_without_author"],
+            "%": group["pct_without_author"],
+        }
+    )
     print(f"\n=== {anthology} ===")
     print(display.to_string(index=False))
 
@@ -56,13 +58,15 @@ def print_summary(df: pd.DataFrame) -> None:
     summary["pct_without_author"] = (
         summary["works_without_author"] / summary["total_works"] * 100
     ).round(2)
-    display = pd.DataFrame({
-        "Anthology":   summary["anthology"],
-        "Editions":    summary["editions"],
-        "Total":       summary["total_works"],
-        "No Author":   summary["works_without_author"],
-        "%":           summary["pct_without_author"],
-    })
+    display = pd.DataFrame(
+        {
+            "Anthology": summary["anthology"],
+            "Editions": summary["editions"],
+            "Total": summary["total_works"],
+            "No Author": summary["works_without_author"],
+            "%": summary["pct_without_author"],
+        }
+    )
     print("\n=== Summary (all editions) ===")
     print(display.to_string(index=False))
 

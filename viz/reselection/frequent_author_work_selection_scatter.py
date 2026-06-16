@@ -106,11 +106,7 @@ def build_entity_pairs(
     df: pd.DataFrame, id_col: str, editions: pd.DataFrame
 ) -> pd.DataFrame:
     """Return one row per selected (entity, edition), with edition year."""
-    pairs = (
-        df[[id_col, "edition_id"]]
-        .dropna(subset=[id_col, "edition_id"])
-        .copy()
-    )
+    pairs = df[[id_col, "edition_id"]].dropna(subset=[id_col, "edition_id"]).copy()
     pairs[id_col] = pairs[id_col].map(_clean_id)
     pairs = pairs[pairs[id_col] != ""]
     pairs = pairs.drop_duplicates([id_col, "edition_id"])
@@ -141,9 +137,7 @@ def compute_year_based_records(
         debut_year = int(debut_years[entity_id])
         selected_editions = entity_editions[entity_id]
         later_editions = all_editions[all_editions["year"] > debut_year]
-        selections = int(
-            later_editions["edition_id"].isin(selected_editions).sum()
-        )
+        selections = int(later_editions["edition_id"].isin(selected_editions).sum())
         opportunities = int(len(later_editions))
         rows.append(
             {
@@ -243,11 +237,7 @@ def build_author_work_rows(
         return out
 
     spread = out.groupby("author_id")["work_selection_rate"].transform(
-        lambda s: (
-            float(s.max() - s.median())
-            if int(s.notna().sum()) > 1
-            else 0.0
-        )
+        lambda s: float(s.max() - s.median()) if int(s.notna().sum()) > 1 else 0.0
     )
     out["work_rate_spread"] = spread
     return out.sort_values(
@@ -300,9 +290,7 @@ def build_plot_frames(
         amount=0.18,
         seed=seed,
     )
-    rates = rows.dropna(
-        subset=["author_selection_rate", "work_selection_rate"]
-    ).copy()
+    rates = rows.dropna(subset=["author_selection_rate", "work_selection_rate"]).copy()
     rates = add_jitter(
         rates,
         x_col="author_selection_rate",
@@ -433,7 +421,9 @@ def plot_html(
         fig.update_xaxes(range=[-0.02, 1.02], tickformat=".0%")
         fig.update_yaxes(range=[-0.02, 1.02], tickformat=".0%")
     elif not df.empty:
-        lim = max(_axis_limit(df["author_selections"]), _axis_limit(df["work_selections"]))
+        lim = max(
+            _axis_limit(df["author_selections"]), _axis_limit(df["work_selections"])
+        )
         fig.add_shape(
             type="line",
             x0=0,

@@ -21,12 +21,13 @@ import pandas as pd
 
 from afam import DATA_DIR
 
-DATA_FILE    = DATA_DIR / "2026-03-13 works per afam anthology.csv"
-OUT_WORKS    = DATA_DIR / "most_anthologized_works.csv"
-OUT_AUTHORS  = DATA_DIR / "most_anthologized_authors.csv"
+DATA_FILE = DATA_DIR / "2026-03-13 works per afam anthology.csv"
+OUT_WORKS = DATA_DIR / "most_anthologized_works.csv"
+OUT_AUTHORS = DATA_DIR / "most_anthologized_authors.csv"
 
 
 # ── Edition-key logic (mirrors heatmap scripts) ───────────────────────────────
+
 
 def _strip_volume(title: str) -> str:
     return re.sub(r",?\s+[Vv]ol\.?\s+\d+\s*$", "", title).strip()
@@ -35,16 +36,23 @@ def _strip_volume(title: str) -> str:
 def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
     meta_rows: list[dict] = []
     for _, r in (
-        df[["anthology_id", "anthology_title", "series_id",
-            "anthology_edition", "anthology_volume"]]
+        df[
+            [
+                "anthology_id",
+                "anthology_title",
+                "series_id",
+                "anthology_edition",
+                "anthology_volume",
+            ]
+        ]
         .drop_duplicates()
         .iterrows()
     ):
         series_id = r["series_id"].strip()
-        edition   = r["anthology_edition"].strip()
-        volume    = r["anthology_volume"].strip()
-        title     = r["anthology_title"].strip()
-        aid       = r["anthology_id"]
+        edition = r["anthology_edition"].strip()
+        volume = r["anthology_volume"].strip()
+        title = r["anthology_title"].strip()
+        aid = r["anthology_id"]
 
         if series_id:
             key = f"{series_id}|{edition}"
@@ -60,13 +68,10 @@ def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
 
 # ── Works table ───────────────────────────────────────────────────────────────
 
+
 def build_works_table(df: pd.DataFrame) -> pd.DataFrame:
     """Count unique editions per work_id, keep representative metadata."""
-    counts = (
-        df.groupby("work_id")["edition_key"]
-        .nunique()
-        .rename("edition_count")
-    )
+    counts = df.groupby("work_id")["edition_key"].nunique().rename("edition_count")
     # One representative row per work for metadata
     meta = (
         df[["work_id", "work_title", "parent_work_title", "author_names"]]
@@ -76,13 +81,21 @@ def build_works_table(df: pd.DataFrame) -> pd.DataFrame:
     result = (
         meta.join(counts)
         .reset_index()
-        .sort_values("edition_count", ascending=False)
-        [["work_id", "work_title", "author_names", "parent_work_title", "edition_count"]]
+        .sort_values("edition_count", ascending=False)[
+            [
+                "work_id",
+                "work_title",
+                "author_names",
+                "parent_work_title",
+                "edition_count",
+            ]
+        ]
     )
     return result
 
 
 # ── Authors table ─────────────────────────────────────────────────────────────
+
 
 def build_authors_table(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -91,40 +104,39 @@ def build_authors_table(df: pd.DataFrame) -> pd.DataFrame:
     """
     records: list[dict] = []
     for _, row in df[df["author_ids"] != ""].iterrows():
-        ids   = [i.strip() for i in row["author_ids"].split(",")]
+        ids = [i.strip() for i in row["author_ids"].split(",")]
         names = [n.strip() for n in row["author_names"].split(";")]
         # Pad names if counts differ (shouldn't normally happen)
         names += [""] * (len(ids) - len(names))
         for aid, name in zip(ids, names):
-            records.append({
-                "author_id":    aid,
-                "author_name":  name,
-                "edition_key":  row["edition_key"],
-            })
+            records.append(
+                {
+                    "author_id": aid,
+                    "author_name": name,
+                    "edition_key": row["edition_key"],
+                }
+            )
 
     expanded = pd.DataFrame(records)
 
     counts = (
-        expanded.groupby("author_id")["edition_key"]
-        .nunique()
-        .rename("edition_count")
+        expanded.groupby("author_id")["edition_key"].nunique().rename("edition_count")
     )
     # Canonical name per author_id (first seen)
-    names = (
-        expanded.drop_duplicates("author_id")
-        .set_index("author_id")["author_name"]
-    )
+    names = expanded.drop_duplicates("author_id").set_index("author_id")["author_name"]
     result = (
         names.to_frame()
         .join(counts)
         .reset_index()
-        .sort_values("edition_count", ascending=False)
-        [["author_id", "author_name", "edition_count"]]
+        .sort_values("edition_count", ascending=False)[
+            ["author_id", "author_name", "edition_count"]
+        ]
     )
     return result
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     df = pd.read_csv(DATA_FILE, dtype=str, na_filter=False)

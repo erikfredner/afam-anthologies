@@ -143,9 +143,7 @@ def poisson_binomial_upper_tail(k: int, probabilities: Iterable[float]) -> float
     dist[0] = 1.0
     for i, p in enumerate(probs, start=1):
         for successes in range(i, 0, -1):
-            dist[successes] = (
-                dist[successes] * (1.0 - p) + dist[successes - 1] * p
-            )
+            dist[successes] = dist[successes] * (1.0 - p) + dist[successes - 1] * p
         dist[0] *= 1.0 - p
     return float(sum(dist[k:]))
 
@@ -163,8 +161,12 @@ def compute_entity_stats(
     if pairs.empty:
         return []
 
-    entity_sets: dict[object, set] = pairs.groupby(id_col)["edition_id"].apply(set).to_dict()
-    edition_sets: dict[object, set] = pairs.groupby("edition_id")[id_col].apply(set).to_dict()
+    entity_sets: dict[object, set] = (
+        pairs.groupby(id_col)["edition_id"].apply(set).to_dict()
+    )
+    edition_sets: dict[object, set] = (
+        pairs.groupby("edition_id")[id_col].apply(set).to_dict()
+    )
     debut_ord = pairs.groupby(id_col)["edition_ordinal"].min().to_dict()
     debut_year = (
         pairs.sort_values(["edition_ordinal", "edition_id"])
@@ -203,7 +205,9 @@ def compute_entity_stats(
         opportunities = len(probabilities)
         expected_count = float(sum(probabilities))
         selection_rate = selections / opportunities if opportunities else float("nan")
-        expected_rate = expected_count / opportunities if opportunities else float("nan")
+        expected_rate = (
+            expected_count / opportunities if opportunities else float("nan")
+        )
 
         if expected_count == 0.0:
             obs_over_expected = float("inf") if selections > 0 else float("nan")
@@ -325,7 +329,9 @@ def aggregate_summary(frame: pd.DataFrame) -> dict[str, float]:
     }
 
 
-def print_summary(works_df: pd.DataFrame, authors_df: pd.DataFrame, alpha: float) -> None:
+def print_summary(
+    works_df: pd.DataFrame, authors_df: pd.DataFrame, alpha: float
+) -> None:
     work = aggregate_summary(works_df)
     author = aggregate_summary(authors_df)
     work_sig = int((works_df["p_value"] <= alpha).sum())
@@ -337,7 +343,9 @@ def print_summary(works_df: pd.DataFrame, authors_df: pd.DataFrame, alpha: float
     print(
         f"{'Later opportunities':28} {work['opportunities']:>12,} {author['opportunities']:>12,}"
     )
-    print(f"{'Observed reselections':28} {work['selections']:>12,} {author['selections']:>12,}")
+    print(
+        f"{'Observed reselections':28} {work['selections']:>12,} {author['selections']:>12,}"
+    )
     print(
         f"{'Expected reselections':28} {work['expected_count']:>12.1f} {author['expected_count']:>12.1f}"
     )
@@ -352,7 +360,9 @@ def print_summary(works_df: pd.DataFrame, authors_df: pd.DataFrame, alpha: float
 
 def print_works_table(works_df: pd.DataFrame, alpha: float) -> None:
     sig = works_df[works_df["p_value"] <= alpha].sort_values(
-        ["obs_over_expected", "selections"], ascending=[False, False], na_position="last"
+        ["obs_over_expected", "selections"],
+        ascending=[False, False],
+        na_position="last",
     )
     print(f"\n===== TOP WORKS (p <= {alpha}) =====")
     if sig.empty:
@@ -384,7 +394,9 @@ def print_works_table(works_df: pd.DataFrame, alpha: float) -> None:
 
 def print_authors_table(authors_df: pd.DataFrame, alpha: float) -> None:
     sig = authors_df[authors_df["p_value"] <= alpha].sort_values(
-        ["obs_over_expected", "selections"], ascending=[False, False], na_position="last"
+        ["obs_over_expected", "selections"],
+        ascending=[False, False],
+        na_position="last",
     )
     print(f"\n===== TOP AUTHORS (p <= {alpha}) =====")
     if sig.empty:

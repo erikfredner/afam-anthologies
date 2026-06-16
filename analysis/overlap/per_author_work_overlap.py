@@ -64,9 +64,7 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
         _series_identity(s, e) for s, e in zip(df["series_id"], df["edition_id"])
     ]
 
-    work_title: dict[int, str] = dict(
-        zip(df["work_id"].astype(int), df["work_title"])
-    )
+    work_title: dict[int, str] = dict(zip(df["work_id"].astype(int), df["work_title"]))
 
     rows: list[dict] = []
     for aid, grp in df.groupby("author_id"):
@@ -163,10 +161,14 @@ def main() -> None:
     ]
 
     for label, out_csv, df in variants:
-        table = compute(df).sort_values(
-            ["n_editions", "n_cross_series_pairs", "max_overlap", "author_name"],
-            ascending=[False, False, False, True],
-        ).reset_index(drop=True)
+        table = (
+            compute(df)
+            .sort_values(
+                ["n_editions", "n_cross_series_pairs", "max_overlap", "author_name"],
+                ascending=[False, False, False, True],
+            )
+            .reset_index(drop=True)
+        )
 
         print(f"\n=== {label} ===")
         display = table.drop(columns=["top_work_id"])

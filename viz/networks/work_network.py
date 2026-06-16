@@ -8,6 +8,7 @@ co-occurrence table, and draw the graph.
 
 Based on viz/anthology_network.py, but nodes represent works instead of authors.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -108,7 +109,9 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
     pos = nx.spring_layout(G, k=0.45, seed=seed)
 
     # dynamic series palette
-    series_set = {d["series"] for _, d in G.nodes(data=True) if d["type"] == "anthology"}
+    series_set = {
+        d["series"] for _, d in G.nodes(data=True) if d["type"] == "anthology"
+    }
     cmap_tab = colormaps.get_cmap("tab10")
     series_palette = {
         s: colors.to_hex(cmap_tab(i % cmap_tab.N))
@@ -128,11 +131,12 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
         )
         for n in work_nodes
     }
-    vmin, vmax = min(work_strength.values(), default=0), max(work_strength.values(), default=0)
+    vmin, vmax = (
+        min(work_strength.values(), default=0),
+        max(work_strength.values(), default=0),
+    )
     norm = colors.Normalize(vmin=vmin, vmax=vmax)
-    work_colours = [
-        colors.to_hex(viridis(norm(work_strength[n]))) for n in work_nodes
-    ]
+    work_colours = [colors.to_hex(viridis(norm(work_strength[n]))) for n in work_nodes]
 
     # anthology nodes
     nx.draw_networkx_nodes(
@@ -182,7 +186,9 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
     nx.draw_networkx_edges(
         G,
         pos,
-        edgelist=[e for e, d in G.edges.items() if d.get("edge_type") == "cooccurrence"],
+        edgelist=[
+            e for e, d in G.edges.items() if d.get("edge_type") == "cooccurrence"
+        ],
         width=[
             0.4 * G.edges[e]["weight"]
             for e in G.edges
@@ -235,7 +241,15 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
 
     # legend for series
     handles = [
-        plt.Line2D([], [], marker="s", linestyle="", color=series_palette[s], markersize=8, label=s)
+        plt.Line2D(
+            [],
+            [],
+            marker="s",
+            linestyle="",
+            color=series_palette[s],
+            markersize=8,
+            label=s,
+        )
         for s in series_palette
     ]
     ax.legend(handles=handles, loc="upper right", frameon=False)
@@ -252,12 +266,8 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv", required=True, help="Input works CSV file")
-    parser.add_argument(
-        "--out", default="work_network.png", help="Output PNG file"
-    )
-    parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for layout"
-    )
+    parser.add_argument("--out", default="work_network.png", help="Output PNG file")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for layout")
     parser.add_argument(
         "--top-percent",
         type=float,
@@ -293,7 +303,7 @@ def main() -> None:
     kept = len(top_ids)
     total = len(counts)
     print(
-        f"[INFO] Keeping top {kept}/{total} works (>= {threshold:.0f} co-occurrences, top {pct*100:.1f}%)"
+        f"[INFO] Keeping top {kept}/{total} works (>= {threshold:.0f} co-occurrences, top {pct * 100:.1f}%)"
     )
     # filter df to only top works
     df = df[df["work_id"].isin(top_ids)]

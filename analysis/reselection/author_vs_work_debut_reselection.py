@@ -221,13 +221,17 @@ def compute_entity_records(
         )[[id_col, "debut_year", "debut_edition_id", "debut_order", "debut_group"]]
     )
 
-    appearance_orders = appearances.groupby(id_col)["edition_order"].apply(list).to_dict()
+    appearance_orders = (
+        appearances.groupby(id_col)["edition_order"].apply(list).to_dict()
+    )
     appearance_years = (
         appearances.groupby(id_col)["anthology_publication_year"].apply(list).to_dict()
     )
     appearance_groups = appearances.groupby(id_col)["entry_group"].apply(list).to_dict()
     all_orders = all_editions["edition_order"].to_numpy(dtype=int)
-    all_groups_by_order = all_editions.set_index("edition_order")["entry_group"].to_dict()
+    all_groups_by_order = all_editions.set_index("edition_order")[
+        "entry_group"
+    ].to_dict()
 
     records: list[dict] = []
     for _, row in debut.iterrows():
@@ -256,7 +260,9 @@ def compute_entity_records(
         ]
 
         reselection_count = len({order for order, _, _ in later_appearances})
-        cross_reselection_count = len({order for order, _, _ in cross_later_appearances})
+        cross_reselection_count = len(
+            {order for order, _, _ in cross_later_appearances}
+        )
         first_year = (
             min(year for _, year, _ in later_appearances)
             if later_appearances
@@ -295,7 +301,9 @@ def compute_work_records(df: pd.DataFrame, all_editions: pd.DataFrame) -> pd.Dat
     return compute_entity_records(build_work_rows(df), "work_id", all_editions)
 
 
-def compute_author_records(df: pd.DataFrame, all_editions: pd.DataFrame) -> pd.DataFrame:
+def compute_author_records(
+    df: pd.DataFrame, all_editions: pd.DataFrame
+) -> pd.DataFrame:
     return compute_entity_records(build_author_rows(df), "author_id", all_editions)
 
 
@@ -406,7 +414,9 @@ def build_summary(works: pd.DataFrame, authors: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def print_summary(summary: pd.DataFrame, works: pd.DataFrame, authors: pd.DataFrame) -> None:
+def print_summary(
+    summary: pd.DataFrame, works: pd.DataFrame, authors: pd.DataFrame
+) -> None:
     print("\n-- Debut Reselection: Author vs Work --------------------------------")
     for _, row in summary.iterrows():
         print(f"\n  {row['metric']}: {row['description']}")
@@ -436,8 +446,9 @@ def print_summary(summary: pd.DataFrame, works: pd.DataFrame, authors: pd.DataFr
         print(
             f"\n  {label}: mean per-debut later-edition reselection probability "
             f"{fmt_pct(mean_prob)}; median years to first reselection "
-            f"{median_years:.1f}" if not pd.isna(median_years) else
-            f"\n  {label}: mean per-debut later-edition reselection probability "
+            f"{median_years:.1f}"
+            if not pd.isna(median_years)
+            else f"\n  {label}: mean per-debut later-edition reselection probability "
             f"{fmt_pct(mean_prob)}; median years to first reselection N/A"
         )
     print()
@@ -539,7 +550,10 @@ def build_debut_work_author_outcomes(
         debut_order = int(work["debut_order"])
         debut_group = work["debut_group"]
         author_returned = any(
-            any(int(order) > debut_order for order in author_orders_by_id.get(aid, set()))
+            any(
+                int(order) > debut_order
+                for order in author_orders_by_id.get(aid, set())
+            )
             for aid in author_ids
         )
         author_returned_cross_series = any(
@@ -643,8 +657,12 @@ def print_paired_outcomes(outcomes: pd.DataFrame) -> None:
     if outcomes.empty:
         print("  No eligible debut work/author paired outcomes.")
         return
-    counts = outcomes["outcome"].value_counts().reindex(
-        ["author_and_work", "author_only", "work_only", "neither"], fill_value=0
+    counts = (
+        outcomes["outcome"]
+        .value_counts()
+        .reindex(
+            ["author_and_work", "author_only", "work_only", "neither"], fill_value=0
+        )
     )
     total = int(counts.sum())
     print("  Debut work / debut author paired outcomes:")
@@ -682,7 +700,13 @@ def make_plot(
     )
 
     series_specs = [
-        ("work_rate", C_WORK, "o", "-", f"Work - all ({fmt_pct(w['is_reselected'].mean())})"),
+        (
+            "work_rate",
+            C_WORK,
+            "o",
+            "-",
+            f"Work - all ({fmt_pct(w['is_reselected'].mean())})",
+        ),
         (
             "author_rate",
             C_AUTHOR,
