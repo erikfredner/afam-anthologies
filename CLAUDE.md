@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Python analysis scripts for studying African American literary anthologies — examining author/work overlap, reselection rates, and predictability of inclusion in *The Norton Anthology of African American Literature* (NAAAL).
 
+## Git convention
+
+Commit directly to `main` when asked to commit. Do **not** create a feature branch first.
+
 ## Commands
 
 ```bash
