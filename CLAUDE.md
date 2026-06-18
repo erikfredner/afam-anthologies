@@ -60,6 +60,7 @@ Every script imports its DB connection, SQL loading, CSV path, and figure-output
 | `afam.cli` | `add_root_works_flag(parser)`, `add_save_csv_flag(parser)` |
 | `afam.editions` | `EDITION_LABELS` (edition_id → short human-readable name) |
 | `afam.names` | `author_last_name`, `author_sort_key` — surname-aware name parsing/sorting (handles particles like "van"/"de" and suffixes like "Jr.") |
+| `afam.vernacular` | `parse_vernacular_row`, `load_vernacular_ranges` — parse the messy editor-designated vernacular page ranges in `data/vernacular_pages.csv` (handles `v1`/`v2` volume prefixes, prefix inheritance, comma/newline splits, `n/a`) |
 
 A typical DB-backed script:
 
@@ -81,6 +82,7 @@ Scripts that print to stdout or write CSVs to `data/`.
 | `overlap/` | `overlap_naaal_1996`, `simulate_author_work_overlap`, `half_or_more_sentences`, `authors_in_half_or_more_afam_eds`, `works_in_half_or_more_afam_eds`, `half_or_more_summary`, `per_author_work_overlap`, `author_disagreement` | Author/work overlap counts, Monte Carlo simulations, and multi-metric author-disagreement verdicts |
 | `reselection/` | `reselection_vs_chance`, `new_selection_reselection_probability`, `author_first_selection_success`, `author_vs_work_debut_reselection`, `post_debut_performance`, `authors_without_frequent_works`, `early_selection_dropouts`, `work_pool_dilution` | Debut reselection rates, post-debut retention, early-dropout and work-pool-dilution analyses |
 | `concentration/` | `author_form_concentration` | Page-weighted and count-weighted per-author-per-form concentration across selected works |
+| `vernacular/` | `vernacular_works` | Resolve editor-designated vernacular page ranges into the works they contain; per-edition share of selections and pages that are vernacular |
 | `predictability/` | `logistic_reselection`, `freq_bucket_predictability`, `predictability_over_time`, `predictability_new_focus_per_edition`, `simulate_naaal1996_selection`, `simulate_naaal2025_selection`, `work_selection_probability_model` | Logistic regression and predictability metrics for NAAAL inclusion |
 | `influence/` | `anthology_influence` | Per-edition influence on subsequent editions: forward pickup rate of each edition's selections (all and debuts-only) vs. corpus baseline |
 | `gender/` | `women_author_gaps`, `author_gender_summary` | Gender-gap analyses |
@@ -99,6 +101,7 @@ Each script writes its PNG/PDF to `output/`.
 | `inequality/` | `inclusion_inequality`, `work_selection_divergence`, `selection_frequency_decay`, `selection_frequency_distribution` | Frequency distributions, divergence, survival curves |
 | `influence/` | `anthology_influence_lift` | Dumbbell chart ranking editions by influence lift on subsequent editions |
 | `misc/` | `canonical_author_map`, `form_by_edition` | One-off canonical-author and literary-form visualizations |
+| `vernacular/` | `vernacular_share` | Bar chart of each edition's vernacular share, by selection count and by page extent |
 
 ## `tests/`
 
@@ -151,6 +154,7 @@ CSV files live in `data/` (gitignored). DB-backed scripts read live from Postgre
 | `2026-03-13 author ids in afam anthologies.csv` | `analysis/reselection/author_first_selection_success.py`, heatmaps |
 | `2026-03-17 af am anthology authors with genders.csv` | Gender analyses |
 | `202505121539 authors works.csv` | `analysis/predictability/freq_bucket_predictability.py`, `analysis/overlap/overlap_naaal_1996.py` |
+| `vernacular_pages.csv` | `afam.vernacular` (vernacular analysis/viz) — hand-maintained `volume_id → page ranges` map of editor-designated vernacular material |
 
 Two `edition_key` formats are derived consistently across scripts via `afam.data`:
 
