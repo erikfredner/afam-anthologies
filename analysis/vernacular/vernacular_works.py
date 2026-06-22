@@ -37,6 +37,7 @@ from afam.vernacular import load_vernacular_ranges
 
 OUT_WORKS = DATA_DIR / "vernacular_works.csv"
 OUT_SHARES = DATA_DIR / "vernacular_edition_shares.csv"
+OUT_RESELECT = DATA_DIR / "vernacular_work_reselection.csv"
 
 
 def load_data(only_root_works: bool = True) -> pd.DataFrame:
@@ -161,6 +162,81 @@ def compute_edition_shares(df: pd.DataFrame, ranges: pd.DataFrame) -> pd.DataFra
     return out.sort_values("year", kind="mergesort").reset_index(drop=True)
 
 
+def compute_work_reselection(df: pd.DataFrame, matched: pd.DataFrame) -> pd.DataFrame:
+    """Per vernacular work: its corpus-wide selection and reselection counts.
+
+    ``selections`` = number of distinct AFAM editions the work appears in (across
+    the whole corpus, not only its vernacular-marked appearances). Following the
+    repo's reselection convention, a work's ``reselections`` (``selections - 1``,
+    the appearances after its debut) are reported over ``opportunities`` = the
+    number of AFAM editions published after the work's debut edition.
+
+    One row per unique vernacular work, sorted high→low by selection count.
+    """
+    if matched.empty:
+        return pd.DataFrame()
+
+    editions = (
+        df[["edition_id", "edition_year"]]
+        .drop_duplicates()
+        .sort_values(["edition_year", "edition_id"], kind="mergesort")
+        .reset_index(drop=True)
+    )
+    edition_pos = {eid: i for i, eid in enumerate(editions["edition_id"])}
+    n_editions = len(editions)
+
+    vern_ids = matched["work_id"].unique()
+    meta = (
+        matched.sort_values(["edition_year", "edition_id"], kind="mergesort")
+        .groupby("work_id")
+        .agg(work_title=("work_title", "first"), authors=("authors", "first"))
+    )
+
+    appears = (
+        df[df["work_id"].isin(vern_ids)]
+        .groupby("work_id")["edition_id"]
+        .apply(lambda s: sorted({edition_pos[e] for e in s}))
+    )
+
+    rows = []
+    for wid in vern_ids:
+        positions = appears[wid]
+        selections = len(positions)
+        debut_pos = positions[0]
+        opportunities = n_editions - 1 - debut_pos
+        rows.append(
+            {
+                "work_title": meta.loc[wid, "work_title"],
+                "authors": meta.loc[wid, "authors"],
+                "selections": selections,
+                "reselections": selections - 1,
+                "opportunities": opportunities,
+            }
+        )
+
+    out = pd.DataFrame(rows)
+    out["work"] = out.apply(
+        lambda r: (
+            f'"{r["work_title"]}" by {r["authors"]}'
+            if isinstance(r["authors"], str) and r["authors"].strip()
+            else f'"{r["work_title"]}"'
+        ),
+        axis=1,
+    )
+    return out.sort_values(
+        ["selections", "reselections", "work_title"],
+        ascending=[False, False, True],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+
+def print_work_reselection(reselect: pd.DataFrame) -> None:
+    print(f"\nVernacular works by selection count ({len(reselect)} works)")
+    print("Work, Selections, Reselections")
+    for r in reselect.itertuples(index=False):
+        print(f"{r.work}, {r.selections}, {r.reselections} / {r.opportunities}")
+
+
 def print_works(matched: pd.DataFrame) -> None:
     cols = ["edition", "volume_number", "work_title", "authors", "pages"]
     print(f"\nWorks in vernacular ranges ({len(matched)} works)")
@@ -204,9 +280,11 @@ def main() -> None:
     ranges = load_vernacular_ranges()
     matched = match_vernacular_works(df, ranges)
     shares = compute_edition_shares(df, ranges)
+    reselect = compute_work_reselection(df, matched)
 
     print_works(matched)
     print_shares(shares)
+    print_work_reselection(reselect)
 
     if args.save_csv:
         OUT_WORKS.parent.mkdir(parents=True, exist_ok=True)
@@ -214,8 +292,19 @@ def main() -> None:
             ["edition", "volume_number", "work_title", "authors", "pages", "toc_page"]
         ].to_csv(OUT_WORKS, index=False)
         shares.to_csv(OUT_SHARES, index=False)
+        reselect[
+            [
+                "work",
+                "work_title",
+                "authors",
+                "selections",
+                "reselections",
+                "opportunities",
+            ]
+        ].to_csv(OUT_RESELECT, index=False)
         print(f"\nSaved → {OUT_WORKS}")
         print(f"Saved → {OUT_SHARES}")
+        print(f"Saved → {OUT_RESELECT}")
 
 
 if __name__ == "__main__":
