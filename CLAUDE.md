@@ -89,7 +89,7 @@ Scripts that print to stdout or write CSVs to `data/`.
 | `vernacular/` | `vernacular_works` | Resolve editor-designated vernacular page ranges into the works they contain; per-edition share of selections and pages that are vernacular |
 | `predictability/` | `logistic_reselection`, `freq_bucket_predictability`, `predictability_over_time`, `predictability_new_focus_per_edition`, `simulate_naaal1996_selection`, `simulate_naaal2025_selection`, `work_selection_probability_model` | Logistic regression and predictability metrics for NAAAL inclusion |
 | `influence/` | `anthology_influence` | Per-edition influence on subsequent editions: forward pickup rate of each edition's selections (all and debuts-only) vs. corpus baseline |
-| `gender/` | `women_author_gaps`, `author_gender_summary` | Gender-gap analyses |
+| `gender/` | `women_author_gaps`, `author_gender_summary`, `gender_work_consistency` | Gender-gap analyses; `gender_work_consistency` tests whether work-selection consistency (Jaccard of an author's work sets across editions, within literary form) differs by gender |
 | `summaries/` | `most_anthologized`, `works_without_authors_naal_naaal`, `count_anthologies`, `count_works`, `edition_stats`, `edition_summary`, `format_author_anthology_counts`, `format_work_anthology_counts`, `author_never_cut`, `compare_series_authors`, `naal_exclusive_authors`, `naal_exclusive_works`, `list_reselected_works` | Counts, formatted tables, exclusivity lists |
 
 ## `viz/` — figure-producing scripts
@@ -130,6 +130,10 @@ Key tables (PostgreSQL, database `anthologies`):
 | `data_work_authors` | `work_id`, `author_id` — many-to-many works ↔ authors |
 | `data_literarytradition` | `id`, `name` — e.g. `'African-American Literature'` |
 | `data_edition_literary_traditions` | `edition_id`, `literarytradition_id` — tags editions by tradition |
+| `data_genders` | `id`, `name` — `Male`, `Female`, `Other` |
+| `data_author_genders` | `author_id`, `genders_id` — many-to-many authors ↔ genders (collapse to one label, e.g. `MIN(genders_id)`) |
+| `data_form` | `id`, `name` — literary form (`poetry`, `fiction`, `nonfiction`, `drama`, `song`, `folk`, …) |
+| `data_work_form` | `work_id`, `form_id` — many-to-many works ↔ forms (multi-form works collapse to lowest `form_id`; excerpts inherit parent form) |
 
 **Join path for works in an edition:** `data_edition` → `data_volume` (via `edition_id`) → `data_workinanthology` (via `volume_id`) → `data_work` (via `work_id`)
 
@@ -156,7 +160,7 @@ CSV files live in `data/` (gitignored). DB-backed scripts read live from Postgre
 | `2026-03-13 works per afam anthology.csv` | Most 2026-era CSV-backed scripts |
 | `2026-03-13 work ids in afam anthologies.csv` | Some heatmap/inequality scripts |
 | `2026-03-13 author ids in afam anthologies.csv` | `analysis/reselection/author_first_selection_success.py`, heatmaps |
-| `2026-03-17 af am anthology authors with genders.csv` | Gender analyses |
+| `2026-03-17 af am anthology authors with genders.csv` | Legacy gender analyses (`women_author_gaps`, `author_gender_summary`, `viz/reselection/gender_reselection`). Newer scripts read gender from the DB (`data_author_genders` → `data_genders`) instead — e.g. `analysis/gender/gender_work_consistency.py`. |
 | `202505121539 authors works.csv` | `analysis/predictability/freq_bucket_predictability.py`, `analysis/overlap/overlap_naaal_1996.py` |
 | `vernacular_pages.csv` | `afam.vernacular` (vernacular analysis/viz) — hand-maintained `volume_id → page ranges` map of editor-designated vernacular material |
 
