@@ -27,6 +27,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from adjustText import adjust_text
 
 from afam.cli import add_root_works_flag
 from afam.editions import EDITION_LABELS
@@ -35,20 +36,49 @@ from afam.viz_style import OUTPUT_DIR
 sys.path.insert(0, str(Path(__file__).parents[2] / "analysis" / "reselection"))
 from author_vs_work_debut_reselection import load_data  # noqa: E402
 
+# Render text (including mathtext italics) in Helvetica Now Micro, falling back
+# to plain Helvetica then Arial. Keep the family as "sans-serif" so the listed
+# fallbacks are consulted; the ←/→ arrows in the axis labels use mathtext.
+plt.rcParams["font.family"] = "sans-serif"
+plt.rcParams["font.sans-serif"] = [
+    "Helvetica Now Micro",
+    "Helvetica",
+    "Arial",
+    "DejaVu Sans",
+]
+plt.rcParams["mathtext.fontset"] = "custom"
+plt.rcParams["mathtext.rm"] = "Helvetica Now Micro"
+plt.rcParams["mathtext.it"] = "Helvetica Now Micro:italic"
+plt.rcParams["mathtext.bf"] = "Helvetica Now Micro:bold"
+
 OUT_FILE = OUTPUT_DIR / "edition_pair_retention_scatter.png"
+# Vector variants emitted alongside the PNG for print/typesetting. PDF (not
+# EPS) so the points' alpha transparency is preserved — the EPS/PostScript
+# backend renders partially transparent artists opaque.
+OUT_FORMATS = ("png", "svg", "pdf")
+# 600 dpi keeps the raster (PNG) crisp at print sizes.
+SAVE_DPI = 600
 GRID_KW = dict(alpha=0.25, linestyle=":")
 POINT_COLOR = "black"
 
-X_AXIS_LABEL = "← fewer works reselected          more works reselected →   (%)"
-Y_AXIS_LABEL = "← fewer authors reselected          more authors reselected →   (%)"
+# Arrows use mathtext so they render independent of Helvetica's glyph coverage
+# (Helvetica lacks ←/→ and per-glyph fallback does not engage for it).
+X_AXIS_LABEL = (
+    r"$\leftarrow$ fewer works reselected          "
+    r"more works reselected $\rightarrow$   (%)"
+)
+Y_AXIS_LABEL = (
+    r"$\leftarrow$ fewer authors reselected          "
+    r"more authors reselected $\rightarrow$   (%)"
+)
 
-# Corner pairs to call out: nearest point to each (work, author) retention
-# target, with the text offset (points) used to keep labels out of the cloud.
-CALLOUT_TARGETS: list[tuple[tuple[float, float], tuple[float, float]]] = [
-    ((0.0, 0.0), (30, -30)),
-    ((0.0, 1.0), (18, 8)),
-    ((1.0, 1.0), (-12, 8)),
-    ((1.0, 0.0), (12, -22)),
+# Corner pairs to call out: the point nearest each (work, author) retention
+# target. Final label placement is solved by adjustText, so no manual offsets.
+CALLOUT_TARGETS: list[tuple[float, float]] = [
+    (0.0, 0.0),
+    (0.0, 1.0),
+    (1.0, 1.0),
+    (1.0, 0.0),
 ]
 
 # Mathtext special characters that must be escaped to render literally.
@@ -134,7 +164,7 @@ def _pair_label(row: pd.Series) -> str:
     earlier = EDITION_LABELS.get(int(row["earlier_edition_id"]), "?")
     later = EDITION_LABELS.get(int(row["later_edition_id"]), "?")
     return (
-        f"{_italic_label(earlier)} ({row['earlier_year']}) →\n"
+        f"{_italic_label(earlier)} ({row['earlier_year']}) &\n"
         f"{_italic_label(later)} ({row['later_year']})"
     )
 
@@ -178,59 +208,53 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
         alpha=0.7,
         zorder=1,
     )
-    ax.text(
-        lim * 0.97,
-        lim * 0.97,
-        "authors = works",
-        fontsize=8,
-        color="gray",
-        ha="right",
-        va="bottom",
-        rotation=45,
-        rotation_mode="anchor",
-    )
 
-    annotated: set[int] = set()
-
-    def _callout(idx: int, offset: tuple[float, float]) -> None:
-        if idx in annotated:
-            return
-        annotated.add(idx)
-        row = pairs.loc[idx]
-        ax.annotate(
-            _pair_label(row),
-            (100 * row["work_retention"], 100 * row["author_retention"]),
-            textcoords="offset points",
-            xytext=offset,
-            fontsize=7.5,
-            ha="left" if offset[0] >= 0 else "right",
-            va="center",
-            arrowprops=dict(
-                arrowstyle="-", color="gray", linewidth=0.7, shrinkA=0, shrinkB=4
-            ),
-            zorder=4,
-        )
-
-    # Pairs nearest each corner of the retention square.
-    for target, offset in CALLOUT_TARGETS:
-        _callout(nearest_pair_index(pairs, target), offset)
-
-    # The cross-series pair with the highest work retention (x value).
+    # Indices of the pairs to label: nearest each corner of the retention
+    # square, plus the cross-series pair with the highest work retention.
+    callout_idxs = [nearest_pair_index(pairs, target) for target in CALLOUT_TARGETS]
     if not cross.empty:
-        _callout(int(cross["work_retention"].idxmax()), (-15, 12))
+        callout_idxs.append(int(cross["work_retention"].idxmax()))
+
+    texts = []
+    for idx in dict.fromkeys(callout_idxs):  # de-dup, preserve order
+        row = pairs.loc[idx]
+        texts.append(
+            ax.text(
+                100 * row["work_retention"],
+                100 * row["author_retention"],
+                _pair_label(row),
+                fontsize=7.5,
+                va="center",
+                zorder=4,
+            )
+        )
 
     ax.set_xlim(-2, lim)
     ax.set_ylim(-2, lim)
     ax.set_xlabel(X_AXIS_LABEL, fontsize=11)
     ax.set_ylabel(Y_AXIS_LABEL, fontsize=11)
     ax.set_title("Author vs. work retention across all edition pairs", fontsize=12)
-    ax.legend(frameon=False, fontsize=9, loc="lower right")
+    legend = ax.legend(frameon=False, fontsize=9, loc="lower right")
     ax.grid(True, **GRID_KW)
     ax.set_aspect("equal")
 
+    # Solve label positions so they avoid every point, each other, and the
+    # legend, drawing a thin leader back to each point.
+    adjust_text(
+        texts,
+        x=(100 * pairs["work_retention"]).to_numpy(),
+        y=(100 * pairs["author_retention"]).to_numpy(),
+        objects=[legend],
+        ax=ax,
+        expand=(1.4, 1.6),
+        arrowprops=dict(arrowstyle="-", color="gray", linewidth=0.7, shrinkA=0),
+    )
+
     fig.tight_layout()
-    fig.savefig(out, dpi=300, bbox_inches="tight")
-    print(f"Saved → {out}")
+    for fmt in OUT_FORMATS:
+        path = out.with_suffix(f".{fmt}")
+        fig.savefig(path, dpi=SAVE_DPI, bbox_inches="tight")
+        print(f"Saved → {path}")
     plt.close(fig)
 
 
