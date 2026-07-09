@@ -109,37 +109,18 @@ def fit_logit_safe(y: pd.Series, x: pd.Series) -> Any:
 
 
 def empirical_rates(frame: pd.DataFrame) -> pd.DataFrame:
-    return (
+    """Per-exact-count selection rate: P(in_target | prior_count == k) for each
+    k present in frame. Unlike a cumulative ">= k" pool, each row reflects only
+    entities with that exact prior count.
+    """
+    rates = (
         frame.groupby("prior_count")["in_target"]
         .agg(probability="mean", n="size")
         .reset_index()
         .sort_values("prior_count")
     )
-
-
-def cumulative_buckets(frame: pd.DataFrame, kmax: int | None = None) -> pd.DataFrame:
-    """For each threshold k, the selection rate among entities with prior_count
-    >= k. Reproduces the cumulative ">= k priors" method (formerly in the
-    CSV-backed freq_bucket_predictability.py): pools all higher-prior entities
-    rather than reading a single per-point rate. Pass the min_prior=0 frame so
-    every entity is represented.
-    """
-    if kmax is None:
-        kmax = int(frame["prior_count"].max())
-    rows = []
-    for k in range(1, kmax + 1):
-        sub = frame[frame["prior_count"] >= k]
-        n = len(sub)
-        selected = int(sub["in_target"].sum())
-        rows.append(
-            {
-                "threshold": k,
-                "n": n,
-                "selected": selected,
-                "pct": (100.0 * selected / n) if n else 0.0,
-            }
-        )
-    return pd.DataFrame(rows)
+    rates["selected"] = (rates["probability"] * rates["n"]).round().astype(int)
+    return rates
 
 
 def predicted_probabilities(result: Any, max_count: int) -> pd.DataFrame:
@@ -232,7 +213,7 @@ def run_mode(
     target_year: int,
     out_dir: Path,
     exclude_prior_series: set[int] | None = None,
-) -> None:
+) -> dict[str, Any] | None:
     singular = "author" if mode == "authors" else "work"
     build = build_author_frame if mode == "authors" else build_work_frame
     frame = build(df, target_year, exclude_prior_series=exclude_prior_series)
@@ -244,7 +225,7 @@ def run_mode(
         print(
             f"\n[{mode}] No {mode} with prior_count >= 1 for target year {target_year}."
         )
-        return
+        return None
 
     result = fit_logit_safe(frame["in_target"], frame["prior_count"])
     curve_df = predicted_probabilities(result, int(frame["prior_count"].max()))
@@ -282,17 +263,65 @@ def run_mode(
     )
     print(f"Saved figure                         : {fig_path}")
 
-    buckets = cumulative_buckets(full_frame)
-    print(f"Cumulative '>= k prior anthologies' selection rate ({mode}):")
-    for _, r in buckets.iterrows():
+    rates = empirical_rates(full_frame[full_frame["prior_count"] >= 1])
+    print(f"Discrete 'exactly k prior anthologies' selection rate ({mode}):")
+    for _, r in rates.iterrows():
         print(
-            f"  >= {int(r['threshold']):>2} priors : "
-            f"{int(r['selected']):>4}/{int(r['n']):>4}  = {r['pct']:5.1f}%"
+            f"  =  {int(r['prior_count']):>2} priors : "
+            f"{int(r['selected']):>4}/{int(r['n']):>4}  = {100 * r['probability']:5.1f}%"
         )
-    crossed = buckets[buckets["pct"] > 50]
-    if not crossed.empty:
-        k = int(crossed.iloc[0]["threshold"])
-        print(f"  -> first threshold with >50% selected: >= {k} prior anthologies")
+    crossed = rates[rates["probability"] > 0.5]
+    if crossed.empty:
+        print(f"  -> no exact prior count reached >50% selected for {mode}")
+        return {
+            "mode": mode,
+            "threshold": None,
+            "n_or_more": None,
+            "total": len(full_frame),
+        }
+
+    top = crossed.iloc[0]
+    threshold = int(top["prior_count"])
+    n_or_more = int((full_frame["prior_count"] >= threshold).sum())
+    print(
+        f"  -> first exact count with >50% selected: {threshold} prior anthologies "
+        f"({int(top['selected'])}/{int(top['n'])} = {100 * top['probability']:.1f}%)"
+    )
+    return {
+        "mode": mode,
+        "threshold": threshold,
+        "n_or_more": n_or_more,
+        "total": len(full_frame),
+    }
+
+
+def print_threshold_summary(results: list[dict[str, Any]]) -> None:
+    by_mode = {r["mode"]: r for r in results if r is not None}
+    singular = {"authors": "author", "works": "work"}
+
+    def clause(mode: str) -> str | None:
+        r = by_mode.get(mode)
+        if r is None or r["threshold"] is None:
+            return None
+        pct = 100.0 * r["n_or_more"] / r["total"]
+        noun = mode if r["n_or_more"] != 1 else singular[mode]
+        return (
+            f"{r['n_or_more']} {noun} ({pct:.1f}% of all {mode}) "
+            f"were selected for {r['threshold']} or more prior anthologies"
+        )
+
+    authors_clause = clause("authors")
+    works_clause = clause("works")
+
+    print("\n===== SUMMARY: more-likely-than-not threshold =====")
+    if authors_clause and works_clause:
+        print(f"Only {authors_clause} and {works_clause}, respectively.")
+    elif authors_clause:
+        print(f"Only {authors_clause}.")
+    elif works_clause:
+        print(f"Only {works_clause}.")
+    else:
+        print("No mode reached a discrete prior count with >50% selection rate.")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -343,8 +372,11 @@ def main() -> None:
     exclude = set(args.exclude_prior_series) if args.exclude_prior_series else None
 
     modes = ["authors", "works"] if args.mode == "both" else [args.mode]
-    for mode in modes:
+    results = [
         run_mode(df, mode, target_year, args.out_dir, exclude_prior_series=exclude)
+        for mode in modes
+    ]
+    print_threshold_summary(results)
 
 
 if __name__ == "__main__":
