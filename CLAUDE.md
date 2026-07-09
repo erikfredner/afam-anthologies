@@ -59,7 +59,7 @@ Every script imports its DB connection, SQL loading, CSV path, and figure-output
 | `afam` (package root) | `REPO_ROOT`, `DATA_DIR`, `QUERIES_DIR`, `OUTPUT_DIR`, `ENV_FILE` |
 | `afam.db` | `parse_db_params(env_file)`, `connect(env_file)`, `query(sql_or_path, params)` |
 | `afam.sql` | `query_path(name)`, `load_query(name)` — resolves `queries/<name>.sql` |
-| `afam.data` | `strip_volume`, `assign_edition_key_pipe`, `assign_edition_key_underscore`, `load_csv(name)` |
+| `afam.data` | `load_csv(name)` — reads the one remaining hand-maintained CSV (`data/vernacular_pages.csv`) |
 | `afam.viz_style` | `OUTPUT_DIR` (auto-mkdir), `DPI`, `FIGSIZE`, `WORK_COLOR`, `AUTHOR_COLOR` |
 | `afam.cli` | `add_root_works_flag(parser)`, `add_save_csv_flag(parser)` |
 | `afam.editions` | `EDITION_LABELS` (edition_id → short human-readable name) |
@@ -83,14 +83,14 @@ Scripts that print to stdout or write CSVs to `data/`.
 
 | Subfolder | Scripts | Purpose |
 |---|---|---|
-| `overlap/` | `overlap_naaal_1996`, `simulate_author_work_overlap`, `half_or_more_sentences`, `authors_in_half_or_more_afam_eds`, `works_in_half_or_more_afam_eds`, `half_or_more_summary`, `per_author_work_overlap`, `author_disagreement` | Author/work overlap counts, Monte Carlo simulations, and multi-metric author-disagreement verdicts |
+| `overlap/` | `overlap_naaal_1996`, `simulate_author_work_overlap`, `half_or_more_sentences`, `authors_in_half_or_more_afam_eds`, `works_in_half_or_more_afam_eds`, `half_or_more_summary`, `per_author_work_overlap`, `author_disagreement`, `sterling_brown_poem_overlap` | Author/work overlap counts, Monte Carlo simulations, multi-metric author-disagreement verdicts, and a single-author (Sterling Brown) pairwise poem-overlap case study |
 | `reselection/` | `reselection_vs_chance`, `new_selection_reselection_probability`, `author_first_selection_success`, `author_vs_work_debut_reselection`, `post_debut_performance`, `authors_without_frequent_works`, `early_selection_dropouts`, `work_pool_dilution`, `reselection_hazard` | Debut reselection rates, post-debut retention, early-dropout and work-pool-dilution analyses; `reselection_hazard` is the edition-indexed discrete-time survival/hazard model (entity-edition person-period table, first-event & recurrent, cloglog/logit GLM) comparing author vs. work reselection net of exposure |
-| `concentration/` | `author_form_concentration`, `poet_work_dispersal`, `poet_signature_concentration` | Page-weighted and count-weighted per-author-per-form concentration across selected works; per-poet work-level dispersal (top-poem edition coverage vs. effective number of poems); `poet_signature_concentration` ranks the inverse — poets whose selection collapses onto one signature poem (high selection volume + few distinct poems + dominant top-poem coverage) |
+| `concentration/` | `author_form_concentration`, `poet_work_dispersal`, `poet_signature_concentration` | Page-weighted and count-weighted per-author-per-form concentration across selected works; per-poet work-level dispersal (top-poem edition coverage vs. effective number of poems, plus an all-forms `distinct_works_all_forms` count — e.g. Hughes 141 vs McKay 58); `poet_signature_concentration` ranks the inverse — poets whose selection collapses onto one signature poem (high selection volume + few distinct poems + dominant top-poem coverage) |
 | `vernacular/` | `vernacular_works` | Resolve editor-designated vernacular page ranges into the works they contain; per-edition share of selections and pages that are vernacular |
-| `predictability/` | `logistic_reselection`, `freq_bucket_predictability`, `predictability_over_time`, `predictability_new_focus_per_edition`, `simulate_naaal1996_selection`, `simulate_naaal2025_selection`, `work_selection_probability_model` | Logistic regression and predictability metrics for NAAAL inclusion |
+| `predictability/` | `logistic_reselection`, `predictability_over_time`, `predictability_new_focus_per_edition`, `simulate_naaal1996_selection`, `simulate_naaal2025_selection`, `work_selection_probability_model` | Logistic regression and predictability metrics for NAAAL inclusion; `logistic_reselection` also prints the cumulative ">= k prior anthologies" selection rate (the threshold method formerly in the deleted `freq_bucket_predictability`); `predictability_over_time` exposes `compute_per_edition()` for the new-focus/repeat-focus consumers |
 | `influence/` | `anthology_influence` | Per-edition influence on subsequent editions: forward pickup rate of each edition's selections (all and debuts-only) vs. corpus baseline |
 | `gender/` | `women_author_gaps`, `author_gender_summary`, `gender_work_consistency` | Gender-gap analyses; `gender_work_consistency` tests whether work-selection consistency (Jaccard of an author's work sets across editions, within literary form) differs by gender |
-| `summaries/` | `most_anthologized`, `works_without_authors_naal_naaal`, `count_anthologies`, `count_works`, `edition_stats`, `edition_summary`, `format_author_anthology_counts`, `format_work_anthology_counts`, `author_never_cut`, `compare_series_authors`, `naal_exclusive_authors`, `naal_exclusive_works`, `list_reselected_works` | Counts, formatted tables, exclusivity lists |
+| `summaries/` | `works_without_authors_naal_naaal`, `edition_stats`, `edition_summary`, `format_author_anthology_counts`, `format_work_anthology_counts`, `author_never_cut`, `compare_series_authors`, `naal_exclusive_authors`, `naal_exclusive_works`, `list_reselected_works` | Counts, formatted tables, exclusivity lists |
 
 ## `viz/` — figure-producing scripts
 
@@ -114,6 +114,8 @@ Pytest unit tests for helpers inside analysis/viz scripts. They `sys.path.insert
 ## `queries/`
 
 SQL files executed by DB-backed scripts via `afam.sql.query_path(name)` (name is the file's stem; the `.sql` suffix is optional).
+
+The workhorse replacement for the legacy "works per afam anthology" CSV dump is `works-authors-per-afam-edition.sql` — one row per (work, author) over AFAM-tagged editions, carrying work/parent titles, edition year/series/number, and author name + birth year. Other shared queries added for the CSV→DB migration: `edition-author-work-totals-afam.sql` (per-edition author/work totals) and `naal-american-authors-works.sql` (Norton American series_id 1 + 3, not AFAM-restricted, for the NAAL-exclusivity / series-comparison scripts).
 
 ## Database schema
 
@@ -153,21 +155,13 @@ DATABASE_URL=PGPASSWORD=<password> psql -h <host> -U <user> <dbname>
 
 ## Data inputs (CSV)
 
-CSV files live in `data/` (gitignored). DB-backed scripts read live from PostgreSQL; only a few legacy scripts still read CSV. Primary source datasets:
+Every script under `analysis/` and `viz/` reads live from PostgreSQL. The only CSV input that remains is one hand-maintained file:
 
 | File | Used by |
 |---|---|
-| `2026-03-13 works per afam anthology.csv` | Most 2026-era CSV-backed scripts |
-| `2026-03-13 work ids in afam anthologies.csv` | Some heatmap/inequality scripts |
-| `2026-03-13 author ids in afam anthologies.csv` | `analysis/reselection/author_first_selection_success.py`, heatmaps |
-| `2026-03-17 af am anthology authors with genders.csv` | Legacy gender analyses (`women_author_gaps`, `author_gender_summary`, `viz/reselection/gender_reselection`). Newer scripts read gender from the DB (`data_author_genders` → `data_genders`) instead — e.g. `analysis/gender/gender_work_consistency.py`. |
-| `202505121539 authors works.csv` | `analysis/predictability/freq_bucket_predictability.py`, `analysis/overlap/overlap_naaal_1996.py` |
 | `vernacular_pages.csv` | `afam.vernacular` (vernacular analysis/viz) — hand-maintained `volume_id → page ranges` map of editor-designated vernacular material |
 
-Two `edition_key` formats are derived consistently across scripts via `afam.data`:
-
-- **Pipe format** (`{series}|{edition}`, 2026 datasets) — `assign_edition_key_pipe(df)`
-- **Underscore format** (`{series_id}_{anthology_edition}`, 202505 dataset) — `assign_edition_key_underscore(df)`
+Editions are volume-collapsed in the DB (one `data_edition.id` per edition), so scripts group on `edition_id` directly — there is no longer any CSV-derived `edition_key` reconstruction. The DB-dump CSVs that scripts used to read (the 2026-era works/authors exports, the genders export, the 202505 datasets, the author-birth export) are obsolete; their values now come from the queries below, chiefly `queries/works-authors-per-afam-edition.sql`.
 
 ## Outputs
 
