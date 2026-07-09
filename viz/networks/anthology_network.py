@@ -35,6 +35,34 @@ import pandas as pd
 from adjustText import adjust_text
 from matplotlib import colormaps, colors
 
+from afam.db import query as query_db
+from afam.sql import query_path
+
+# series_id → full series name (matches the draw_graph palette).
+SERIES_NAMES = {
+    1: "The Norton Anthology of American Literature",
+    3: "The Norton Anthology of African American Literature",
+}
+
+
+# ---------------------------------------------------------------------
+# 0. Default data source (live DB)
+# ---------------------------------------------------------------------
+def load_from_db() -> pd.DataFrame:
+    """Author × edition rows for the Norton American + African American series,
+    shaped to the columns the graph builder expects."""
+    df = query_db(query_path("naal-american-authors-works")).dropna(
+        subset=["author_id"]
+    )
+    return pd.DataFrame(
+        {
+            "anthology_series": df["series_id"].astype(int).map(SERIES_NAMES),
+            "anthology_edition": df["edition_number"],
+            "author_id": df["author_id"].astype(int),
+            "author_name": df["author_name"],
+        }
+    )
+
 
 # ---------------------------------------------------------------------
 # 1. Helper: collapsed edition ID
@@ -268,12 +296,16 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
 # ---------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", required=True, help="Input CSV file")
+    parser.add_argument(
+        "--csv",
+        default=None,
+        help="Optional input CSV (default: live DB, Norton American + AFAM series)",
+    )
     parser.add_argument("--out", default="network.png", help="Output PNG file")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 
-    df = pd.read_csv(args.csv)
+    df = pd.read_csv(args.csv) if args.csv else load_from_db()
     df["group_id"] = df.apply(
         lambda r: make_group_id(r["anthology_series"], r["anthology_edition"]), axis=1
     )

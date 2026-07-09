@@ -69,6 +69,7 @@ CSV_COLS = [
     "author_last_name",
     "poetry_editions",
     "author_editions_all_forms",
+    "distinct_works_all_forms",
     "distinct_poems",
     "top_poem",
     "top_poem_editions",
@@ -113,9 +114,21 @@ def filter_leaf_works(raw: pd.DataFrame, container_ids: set[int]) -> pd.DataFram
 
 
 def build_poet_dispersal(
-    outputs: dict[str, pd.DataFrame], raw: pd.DataFrame, *, min_editions: int = 10
+    outputs: dict[str, pd.DataFrame],
+    raw: pd.DataFrame,
+    raw_all: pd.DataFrame | None = None,
+    *,
+    min_editions: int = 10,
 ) -> pd.DataFrame:
-    """Per-poet poetry dispersal table, ranked for the Brown/Hughes comparison."""
+    """Per-poet poetry dispersal table, ranked for the Brown/Hughes comparison.
+
+    `raw` is the leaf-filtered frame (individual poems); `raw_all` is the
+    unfiltered frame (every work, all forms) used for the all-forms
+    distinct-works count (e.g. Hughes 141 vs McKay 58, draft L121). When
+    `raw_all` is omitted it defaults to `raw`.
+    """
+    if raw_all is None:
+        raw_all = raw
     concentration = outputs["concentration"]
     per_work = outputs["per_work"]
 
@@ -148,8 +161,21 @@ def build_poet_dispersal(
         .reset_index()
     )
 
-    table = poetry_conc.merge(top, on="author_id", how="left").merge(
-        all_forms, on="author_id", how="left"
+    # Distinct anthologized works across ALL forms, counted from the unfiltered
+    # frame (every work, incl. excerpts/containers). Reproduces the draft's
+    # all-forms tally (Hughes 141 vs McKay 58, L121).
+    distinct_all = (
+        raw_all.dropna(subset=["author_id"])
+        .groupby("author_id")["work_id"]
+        .nunique()
+        .rename("distinct_works_all_forms")
+        .reset_index()
+    )
+
+    table = (
+        poetry_conc.merge(top, on="author_id", how="left")
+        .merge(all_forms, on="author_id", how="left")
+        .merge(distinct_all, on="author_id", how="left")
     )
     table = table.rename(
         columns={
@@ -207,11 +233,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    raw = query_db(query_path("author-page-share-reselection"))
-    raw = filter_leaf_works(raw, fetch_container_ids())
+    raw_all = query_db(query_path("author-page-share-reselection"))
+    raw = filter_leaf_works(raw_all, fetch_container_ids())
 
     outputs = compute(raw)
-    table = build_poet_dispersal(outputs, raw, min_editions=args.min_editions)
+    table = build_poet_dispersal(
+        outputs, raw, raw_all, min_editions=args.min_editions
+    )
 
     if args.save_csv:
         table.to_csv(OUT_CSV, index=False)

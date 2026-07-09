@@ -12,7 +12,6 @@ Y-axis : % of items at that count that were selected for NAAAL 1996
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -20,68 +19,28 @@ import numpy as np
 import pandas as pd
 
 
-from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
-DATA_FILE = DATA_DIR / "2026-03-13 works per afam anthology.csv"
 OUT_FILE = OUTPUT_DIR / "naaal1996_prior_selection.png"
 OUT_FILE_2 = OUTPUT_DIR / "naaal1996_prior_selection_twopanel.png"
 
-NAAAL_SERIES_ID = "3"
+# Target NAAAL edition: series_id=3 (NAAAL), edition_number="1" (first edition).
+NAAAL_SERIES_ID = 3
 NAAAL_EDITION = "1"
-NAAAL_YEAR = 1996
 
 WORK_COLOR = "#1f77b4"
 AUTHOR_COLOR = "#d62728"
 
 
-# ── Edition-key logic (mirrors heatmap scripts) ───────────────────────────────
-
-
-def _strip_volume(title: str) -> str:
-    return re.sub(r",?\s+[Vv]ol\.?\s+\d+\s*$", "", title).strip()
-
-
-def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
-    meta_rows: list[dict] = []
-    for _, r in (
-        df[
-            [
-                "anthology_id",
-                "anthology_title",
-                "series_id",
-                "anthology_edition",
-                "anthology_volume",
-            ]
-        ]
-        .drop_duplicates()
-        .iterrows()
-    ):
-        series_id = r["series_id"].strip()
-        edition = r["anthology_edition"].strip()
-        volume = r["anthology_volume"].strip()
-        title = r["anthology_title"].strip()
-        aid = r["anthology_id"]
-
-        if series_id:
-            key = f"{series_id}|{edition}"
-        elif volume:
-            key = f"{_strip_volume(title)}|{edition}"
-        else:
-            key = aid
-
-        meta_rows.append({"anthology_id": aid, "edition_key": key})
-
-    return df.merge(pd.DataFrame(meta_rows), on="anthology_id")
-
-
 # ── Works analysis ────────────────────────────────────────────────────────────
 
 
-def build_work_frame(df: pd.DataFrame, naaal_key: str) -> pd.DataFrame:
-    naaal_works = set(df.loc[df["edition_key"] == naaal_key, "work_id"])
-    other = df[df["edition_key"] != naaal_key]
-    prior_counts = other.groupby("work_id")["edition_key"].nunique()
+def build_work_frame(df: pd.DataFrame, target_id: int) -> pd.DataFrame:
+    naaal_works = set(df.loc[df["edition_id"] == target_id, "work_id"])
+    other = df[df["edition_id"] != target_id]
+    prior_counts = other.groupby("work_id")["edition_id"].nunique()
 
     all_works = df["work_id"].unique()
     wdf = pd.DataFrame({"work_id": all_works})
@@ -93,31 +52,13 @@ def build_work_frame(df: pd.DataFrame, naaal_key: str) -> pd.DataFrame:
 # ── Authors analysis ──────────────────────────────────────────────────────────
 
 
-def expand_authors(df: pd.DataFrame) -> pd.DataFrame:
-    """Return long-form table with one row per (author_id, edition_key)."""
-    records: list[dict] = []
-    for _, row in df[df["author_ids"] != ""].iterrows():
-        ids = [i.strip() for i in row["author_ids"].split(",")]
-        names = [n.strip() for n in row["author_names"].split(";")]
-        names += [""] * (len(ids) - len(names))
-        for aid, name in zip(ids, names):
-            records.append(
-                {
-                    "author_id": aid,
-                    "author_name": name,
-                    "edition_key": row["edition_key"],
-                }
-            )
-    return pd.DataFrame(records)
+def build_author_frame(df: pd.DataFrame, target_id: int) -> pd.DataFrame:
+    a = df.dropna(subset=["author_id"])
+    naaal_authors = set(a.loc[a["edition_id"] == target_id, "author_id"])
+    other = a[a["edition_id"] != target_id]
+    prior_counts = other.groupby("author_id")["edition_id"].nunique()
 
-
-def build_author_frame(df: pd.DataFrame, naaal_key: str) -> pd.DataFrame:
-    expanded = expand_authors(df)
-    naaal_authors = set(expanded.loc[expanded["edition_key"] == naaal_key, "author_id"])
-    other = expanded[expanded["edition_key"] != naaal_key]
-    prior_counts = other.groupby("author_id")["edition_key"].nunique()
-
-    all_authors = expanded["author_id"].unique()
+    all_authors = a["author_id"].unique()
     adf = pd.DataFrame({"author_id": all_authors})
     adf["prior_count"] = adf["author_id"].map(prior_counts).fillna(0).astype(int)
     adf["in_naaal"] = adf["author_id"].isin(naaal_authors)
@@ -305,15 +246,19 @@ def plot_two_panel(
 
 
 def main() -> None:
-    df = pd.read_csv(DATA_FILE, dtype=str, na_filter=False)
-    df["anthology_publication_year"] = df["anthology_publication_year"].astype(int)
-    df = df[df["anthology_publication_year"] <= NAAAL_YEAR]
-    df = assign_edition_key(df)
+    df = query_db(query_path("works-authors-per-afam-edition"))
+    target = df[
+        (df["series_id"] == NAAAL_SERIES_ID) & (df["edition_number"] == NAAAL_EDITION)
+    ]
+    target_id = int(target["edition_id"].iloc[0])
+    target_year = int(target["anthology_publication_year"].iloc[0])
+    df = df[
+        (df["edition_id"] == target_id)
+        | (df["anthology_publication_year"] < target_year)
+    ]
 
-    naaal_key = f"{NAAAL_SERIES_ID}|{NAAAL_EDITION}"
-
-    work_frame = build_work_frame(df, naaal_key)
-    author_frame = build_author_frame(df, naaal_key)
+    work_frame = build_work_frame(df, target_id)
+    author_frame = build_author_frame(df, target_id)
 
     work_ks, work_pcts, work_ns = inclusion_curve(work_frame, "prior_count")
     auth_ks, auth_pcts, auth_ns = inclusion_curve(author_frame, "prior_count")

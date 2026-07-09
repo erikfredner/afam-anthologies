@@ -18,7 +18,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,94 +32,71 @@ from sklearn.metrics import roc_auc_score
 
 # ── Config ────────────────────────────────────────────────────────────────────
 from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
-DATA_FILE = DATA_DIR / "2026-03-13 works per afam anthology.csv"
 FIG_OUT = OUTPUT_DIR / "naaal2025_predicted_prob_curves.png"
 FIG_OUT_LR = OUTPUT_DIR / "naaal2025_logit_curves.png"
 CSV_OUT_W = DATA_DIR / "naaal2025_surprising_absences_works.csv"
 CSV_OUT_A = DATA_DIR / "naaal2025_surprising_absences_authors.csv"
 
-NAAAL_KEY = "3|4"
-NAAAL_YEAR = 2025
+# Target NAAAL edition: series_id=3 (NAAAL), edition_number="4" (fourth edition).
+NAAAL_SERIES_ID = 3
+NAAAL_EDITION_NUMBER = "4"
 WORK_COLOR = "#1f77b4"
 AUTHOR_COLOR = "#d62728"
 TOP_N = 20
 
 
-# ── Helpers (copied verbatim from naaal1996_prior_selection.py) ───────────────
+# ── Target edition + prior window ─────────────────────────────────────────────
 
 
-def _strip_volume(title: str) -> str:
-    return re.sub(r",?\s+[Vv]ol\.?\s+\d+\s*$", "", title).strip()
+def resolve_target(df: pd.DataFrame) -> tuple[int, int]:
+    """Return (edition_id, year) of the target NAAAL edition in the wide frame."""
+    target = df[
+        (df["series_id"] == NAAAL_SERIES_ID)
+        & (df["edition_number"] == NAAAL_EDITION_NUMBER)
+    ]
+    if target.empty:
+        raise ValueError("Target NAAAL edition not found in data")
+    return int(target["edition_id"].iloc[0]), int(
+        target["anthology_publication_year"].iloc[0]
+    )
 
 
-def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
-    meta_rows: list[dict] = []
-    for _, r in (
-        df[
-            [
-                "anthology_id",
-                "anthology_title",
-                "series_id",
-                "anthology_edition",
-                "anthology_volume",
-            ]
-        ]
-        .drop_duplicates()
-        .iterrows()
-    ):
-        series_id = r["series_id"].strip()
-        edition = r["anthology_edition"].strip()
-        volume = r["anthology_volume"].strip()
-        title = r["anthology_title"].strip()
-        aid = r["anthology_id"]
-
-        if series_id:
-            key = f"{series_id}|{edition}"
-        elif volume:
-            key = f"{_strip_volume(title)}|{edition}"
-        else:
-            key = aid
-
-        meta_rows.append({"anthology_id": aid, "edition_key": key})
-
-    return df.merge(pd.DataFrame(meta_rows), on="anthology_id")
-
-
-def expand_authors(df: pd.DataFrame) -> pd.DataFrame:
-    """Return long-form table with one row per (author_id, edition_key, author_name)."""
-    records: list[dict] = []
-    for _, row in df[df["author_ids"] != ""].iterrows():
-        ids = [i.strip() for i in row["author_ids"].split(",")]
-        names = [n.strip() for n in row["author_names"].split(";")]
-        names += [""] * (len(ids) - len(names))
-        for aid, name in zip(ids, names):
-            records.append(
-                {
-                    "author_id": aid,
-                    "author_name": name,
-                    "edition_key": row["edition_key"],
-                }
-            )
-    return pd.DataFrame(records)
+def prior_window(df: pd.DataFrame, target_id: int, target_year: int) -> pd.DataFrame:
+    """The target edition plus every AFAM edition published strictly before it."""
+    return df[
+        (df["edition_id"] == target_id)
+        | (df["anthology_publication_year"] < target_year)
+    ].copy()
 
 
 # ── Data frames ───────────────────────────────────────────────────────────────
 
 
-def build_work_frame(df: pd.DataFrame, only_root: bool) -> pd.DataFrame:
-    """One row per work. Includes zero-prior works (debut in NAAAL)."""
+def build_work_frame(df: pd.DataFrame, only_root: bool, target_id: int) -> pd.DataFrame:
+    """One row per work. Includes zero-prior works (debut in NAAAL).
+
+    `df` is the wide (work × author × edition) frame restricted to the prior
+    window; `target_id` is the NAAAL edition's edition_id.
+    """
     if only_root:
-        df = df[(df["parent_work_id"] == "") & (df["parent_work_title"] == "")]
+        df = df[df["parent_id"].isna()]
 
-    naaal_works = set(df.loc[df["edition_key"] == NAAAL_KEY, "work_id"])
-    other = df[df["edition_key"] != NAAAL_KEY]
-    prior_counts = other.groupby("work_id")["edition_key"].nunique()
+    naaal_works = set(df.loc[df["edition_id"] == target_id, "work_id"])
+    other = df[df["edition_id"] != target_id]
+    prior_counts = other.groupby("work_id")["edition_id"].nunique()
 
-    # Metadata per work_id: take first occurrence for each work
+    # Authors per work, joined as "Name A; Name B" for the absences table.
+    author_names = (
+        df.dropna(subset=["author_id"])
+        .groupby("work_id")["author_name"]
+        .agg(lambda s: "; ".join(dict.fromkeys(s.dropna())))
+    )
     meta = (
-        df[["work_id", "work_title", "author_names", "parent_work_title"]]
+        df[["work_id", "work_title", "parent_work_title"]]
         .drop_duplicates("work_id")
         .set_index("work_id")
     )
@@ -129,23 +105,24 @@ def build_work_frame(df: pd.DataFrame, only_root: bool) -> pd.DataFrame:
     wdf["prior_count"] = wdf["work_id"].map(prior_counts).fillna(0).astype(int)
     wdf["in_naaal"] = wdf["work_id"].isin(naaal_works).astype(int)
     wdf = wdf.join(meta, on="work_id")
+    wdf["author_names"] = wdf["work_id"].map(author_names).fillna("")
     wdf = wdf[wdf["prior_count"] >= 1]
     return wdf.reset_index(drop=True)
 
 
-def build_author_frame(df: pd.DataFrame) -> pd.DataFrame:
+def build_author_frame(df: pd.DataFrame, target_id: int) -> pd.DataFrame:
     """One row per author. Includes zero-prior authors (debut in NAAAL)."""
-    expanded = expand_authors(df)
-    naaal_authors = set(expanded.loc[expanded["edition_key"] == NAAAL_KEY, "author_id"])
-    other = expanded[expanded["edition_key"] != NAAAL_KEY]
-    prior_counts = other.groupby("author_id")["edition_key"].nunique()
+    a = df.dropna(subset=["author_id"]).copy()
+    naaal_authors = set(a.loc[a["edition_id"] == target_id, "author_id"])
+    other = a[a["edition_id"] != target_id]
+    prior_counts = other.groupby("author_id")["edition_id"].nunique()
 
     # Canonical name: most common name for each author_id
-    name_map = expanded.groupby("author_id")["author_name"].agg(
+    name_map = a.groupby("author_id")["author_name"].agg(
         lambda s: s.value_counts().index[0]
     )
 
-    adf = pd.DataFrame({"author_id": expanded["author_id"].unique()})
+    adf = pd.DataFrame({"author_id": a["author_id"].unique()})
     adf["prior_count"] = adf["author_id"].map(prior_counts).fillna(0).astype(int)
     adf["in_naaal"] = adf["author_id"].isin(naaal_authors).astype(int)
     adf["author_name"] = adf["author_id"].map(name_map).fillna("")
@@ -545,17 +522,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # 1. Load + assign edition keys + filter to NAAAL_YEAR
-    df = pd.read_csv(DATA_FILE, dtype=str, na_filter=False)
-    df["anthology_publication_year"] = df["anthology_publication_year"].astype(int)
-    df = df[df["anthology_publication_year"] <= NAAAL_YEAR]
-    df = assign_edition_key(df)
+    # 1. Load wide frame from the DB and restrict to the target + prior window
+    df = query_db(query_path("works-authors-per-afam-edition"))
+    target_id, target_year = resolve_target(df)
+    df = prior_window(df, target_id, target_year)
 
-    n_pre_editions = int(df[df["edition_key"] != NAAAL_KEY]["edition_key"].nunique())
+    n_pre_editions = int(df[df["edition_id"] != target_id]["edition_id"].nunique())
 
     # 2. Build frames
-    work_frame = build_work_frame(df, only_root=args.only_root_works)
-    author_frame = build_author_frame(df)
+    work_frame = build_work_frame(df, args.only_root_works, target_id)
+    author_frame = build_author_frame(df, target_id)
 
     print("\n===== DATA OVERVIEW =====")
     print(f"Pre-2025 non-NAAAL editions counted : {n_pre_editions}")

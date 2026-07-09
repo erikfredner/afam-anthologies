@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-list_universally_selected.py
+list_reselected_works.py
 
-Reads an input CSV of works and authors across multiple anthology series and prints to stdout:
+Reads works and authors across the AFAM anthology corpus from the live database
+and prints to stdout:
 
-1. A list of authors who appear in every edition of every series.
-2. A list of works that appear in every edition of every series.
+1. Authors who appear in every AFAM edition.
+2. Works that appear in every AFAM edition.
 
 Authors are printed as:
     - Author Name
@@ -15,87 +16,41 @@ Works are printed as:
 
 Both lists are sorted alphabetically (authors by name; works by author then title).
 
-Sample CLI usage:
-    python list_universally_selected.py path/to/input.csv
+Usage:
+    uv run python analysis/summaries/list_reselected_works.py
 """
 
-import sys
 import argparse
-import pandas as pd
+
+from afam.db import query as query_db
+from afam.sql import query_path
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="List authors and works selected in every edition of every anthology series."
+    argparse.ArgumentParser(
+        description="List authors and works selected in every AFAM edition."
+    ).parse_args()
+
+    authors = query_db(query_path("authors-in-all-afam-eds"))
+    works = query_db(query_path("works-in-all-afam-eds"))
+    wide = query_db(query_path("works-authors-per-afam-edition"))
+
+    # One author name per work (first listed author) for the "by Author" label.
+    work_author = (
+        wide.dropna(subset=["author_id"])
+        .drop_duplicates("work_id")
+        .set_index("work_id")["author_name"]
     )
-    parser.add_argument(
-        "input_csv",
-        help="Path to the input CSV (must include columns: "
-        '"work_id","work_title","author_id","author_name",'
-        '"series_name","anthology_edition")',
+
+    universal_authors = sorted(authors["name"], key=lambda n: str(n).lower())
+    universal_works = sorted(
+        (
+            (work_author.get(int(row["id"]), ""), row["title"])
+            for _, row in works.iterrows()
+        ),
+        key=lambda at: (str(at[0]).lower(), str(at[1]).lower()),
     )
-    args = parser.parse_args()
 
-    # Load data
-    df = pd.read_csv(args.input_csv, dtype=str)
-    required = {
-        "work_id",
-        "work_title",
-        "author_id",
-        "author_name",
-        "series_name",
-        "anthology_edition",
-    }
-    if not required.issubset(df.columns):
-        missing = required - set(df.columns)
-        sys.exit(f"ERROR: Missing required columns: {', '.join(missing)}")
-
-    # Normalize edition to int
-    df["anthology_edition"] = df["anthology_edition"].astype(int)
-
-    # Determine full set of editions per series
-    series_names = sorted(df["series_name"].unique())
-    series_editions = {
-        s: set(df.loc[df["series_name"] == s, "anthology_edition"])
-        for s in series_names
-    }
-
-    # --- Authors ---
-    # Deduplicate on author + series + edition
-    auth_df = df[
-        ["author_id", "author_name", "series_name", "anthology_edition"]
-    ].drop_duplicates()
-    universal_authors = []
-    for author_id, sub in auth_df.groupby("author_id"):
-        name = sub["author_name"].iloc[0]
-        # Editions by series for this author
-        ed_by_series = {
-            s: set(sub.loc[sub["series_name"] == s, "anthology_edition"])
-            for s in series_names
-        }
-        # Check full coverage
-        if all(ed_by_series[s] == series_editions[s] for s in series_names):
-            universal_authors.append(name)
-    universal_authors.sort(key=lambda n: n.lower())
-
-    # --- Works ---
-    # Deduplicate on work + series + edition
-    work_df = df[
-        ["work_id", "work_title", "author_name", "series_name", "anthology_edition"]
-    ].drop_duplicates()
-    universal_works = []
-    for work_id, sub in work_df.groupby("work_id"):
-        title = sub["work_title"].iloc[0]
-        author = sub["author_name"].iloc[0]
-        ed_by_series = {
-            s: set(sub.loc[sub["series_name"] == s, "anthology_edition"])
-            for s in series_names
-        }
-        if all(ed_by_series[s] == series_editions[s] for s in series_names):
-            universal_works.append((author, title))
-    universal_works.sort(key=lambda at: (at[0].lower(), at[1].lower()))
-
-    # Output authors
     print("Universally selected authors:")
     if universal_authors:
         for name in universal_authors:

@@ -17,15 +17,19 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from afam import DATA_DIR
-from afam.viz_style import OUTPUT_DIR
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "analysis" / "predictability"))
 
-DEFAULT_CSV_DIR = DATA_DIR
+from predictability_over_time import compute_per_edition  # noqa: E402
+
+from afam.viz_style import OUTPUT_DIR  # noqa: E402
+
 DEFAULT_OUT_DIR = OUTPUT_DIR
 
 PLOT_METRICS = [
@@ -130,12 +134,6 @@ def render(df: pd.DataFrame, out_path: Path, title_suffix: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--csv-dir",
-        type=Path,
-        default=DEFAULT_CSV_DIR,
-        help=f"Directory containing the predictability CSVs (default: {DEFAULT_CSV_DIR})",
-    )
-    parser.add_argument(
         "--out-dir",
         type=Path,
         default=DEFAULT_OUT_DIR,
@@ -144,14 +142,7 @@ def main() -> None:
     args = parser.parse_args()
 
     for entity in ["authors", "works"]:
-        csv_path = args.csv_dir / f"predictability_over_time_{entity}.csv"
-        if not csv_path.exists():
-            print(
-                f"Skipping {entity}: {csv_path} not found. "
-                f"Run analysis/predictability_over_time.py --save-csv first."
-            )
-            continue
-        df = pd.read_csv(csv_path)
+        df = compute_per_edition(entity)
         out_path = args.out_dir / f"predictability_over_time_{entity}.png"
         render(df, out_path, title_suffix=entity)
 

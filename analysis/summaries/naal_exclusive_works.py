@@ -2,86 +2,60 @@
 """
 naal_exclusive_works.py
 
-Select works that appear in every edition of The Norton Anthology of African American Literature (NAAL)
-but never appear in any edition of The Norton Anthology of American Literature (Norton American).
-Retain only those works that appear in all NAAL editions (four total).
-Print a single line grouping works by author, for example:
-    Author A: "Title 1", "Title 2"; Author B: "Title 3"; Author C: "Title 4", "Title 5"
+Works that appear in every edition of The Norton Anthology of African American
+Literature (NAAAL, series_id=3) but never in any edition of The Norton Anthology
+of American Literature (Norton American, series_id=1), read live from the
+database. Print a single line grouping works by author, e.g.:
+    Author A: "Title 1", "Title 2"; Author B: "Title 3"
 
-Sample CLI usage:
-    python viz/naal_exclusive_works.py data/202504211659_works.csv
+Usage:
+    uv run python analysis/summaries/naal_exclusive_works.py
 """
 
 import argparse
-import csv
-import sys
+
+import pandas as pd
+
+from afam.db import query as query_db
+from afam.sql import query_path
+
+NAAAL_SERIES_ID = 3
+NAFAM_SERIES_ID = 1
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    argparse.ArgumentParser(
         description=(
-            "List works appearing in all editions of the Norton Anthology of African American Literature "
-            "but never in the Norton Anthology of American Literature, grouped by author."
+            "List works in every NAAAL edition but never in Norton American, "
+            "grouped by author."
         )
-    )
-    parser.add_argument(
-        "input_csv",
-        nargs="?",
-        default="data/202504211659_works.csv",
-        help=(
-            "Path to input CSV (default: data/202504211659_works.csv; "
-            'must include "work_title", "author_name", "series_name", '
-            'and "anthology_edition" columns)'
-        ),
-    )
-    args = parser.parse_args()
+    ).parse_args()
 
-    NAAL = "The Norton Anthology of African American Literature"
-    NAFAM = "The Norton Anthology of American Literature"
+    df = query_db(query_path("naal-american-authors-works"))
+    naal = df[df["series_id"] == NAAAL_SERIES_ID]
+    nafam_work_ids = set(df.loc[df["series_id"] == NAFAM_SERIES_ID, "work_id"])
 
-    naal_editions = {}
-    nafam_works = set()
-    naal_all_editions = set()
-    try:
-        with open(args.input_csv, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            # Validate required columns
-            for col in (
-                "work_title",
-                "author_name",
-                "series_name",
-                "anthology_edition",
-            ):
-                if col not in reader.fieldnames:
-                    sys.exit(f"ERROR: Expected column '{col}' in {args.input_csv}")
-            # Collect editions per work for NAAL and track any appearances in NAFAM
-            for row in reader:
-                title = row["work_title"].strip()
-                author = row["author_name"].strip()
-                series = row["series_name"].strip()
-                edition = row["anthology_edition"].strip()
-                if series == NAAL:
-                    naal_editions.setdefault((title, author), set()).add(edition)
-                    naal_all_editions.add(edition)
-                elif series == NAFAM:
-                    nafam_works.add((title, author))
-    except FileNotFoundError:
-        sys.exit(f"ERROR: File not found: {args.input_csv}")
-
-    # Determine works exclusive to NAAL that appear in all NAAL editions
-    complete_works = {
-        (title, author): editions
-        for (title, author), editions in naal_editions.items()
-        if (title, author) not in nafam_works and editions == naal_all_editions
+    n_all_editions = naal["edition_id"].nunique()
+    work_edition_counts = naal.groupby("work_id")["edition_id"].nunique()
+    complete_ids = {
+        wid
+        for wid, cnt in work_edition_counts.items()
+        if cnt == n_all_editions and wid not in nafam_work_ids
     }
 
-    if not complete_works:
+    if not complete_ids:
         print("")
         return
 
-    # Group works by author, sorting authors and titles alphabetically
-    works_by_author = {}
-    for title, author in complete_works:
+    meta = naal.loc[
+        naal["work_id"].isin(complete_ids),
+        ["work_id", "work_title", "author_name"],
+    ].drop_duplicates(["work_id", "author_name"])
+    works_by_author: dict[str, list[str]] = {}
+    for _, work in meta.iterrows():
+        author = work["author_name"]
+        author = "(no author)" if pd.isna(author) else author
+        title = work["work_title"]
         works_by_author.setdefault(author, []).append(title)
 
     groups = []
@@ -90,7 +64,6 @@ def main():
         quoted = ", ".join(f'"{t}"' for t in titles)
         groups.append(f"{author}: {quoted}")
 
-    # Print a single line with semicolon-separated author groups
     print("; ".join(groups))
 
 

@@ -15,27 +15,12 @@ import argparse
 import pandas as pd
 
 from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.sql import query_path
 
-DATA_FILE = DATA_DIR / "2026-03-17 af am anthology authors with genders.csv"
 OUT_CSV = "women_author_gaps.csv"
 
 PRESENT_YEAR = 2026
-
-
-# ── Edition-key logic ────────────────────────────────────────────────────────
-
-
-def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["edition_key"] = df.apply(
-        lambda r: (
-            f"{r['series_id']}|{r['edition']}"
-            if r["series_id"].strip()
-            else r["anthology_id"]
-        ),
-        axis=1,
-    )
-    return df
 
 
 # ── Gap computation ───────────────────────────────────────────────────────────
@@ -54,25 +39,25 @@ def largest_gap(years: list[int]) -> int:
 
 
 def build_table(df: pd.DataFrame) -> pd.DataFrame:
-    df = df[df["gender"].str.strip().str.lower() == "female"].copy()
-    df = assign_edition_key(df)
-    df["publication_year"] = df["publication_year"].astype(int)
+    """`df` is the gender-work-consistency frame (author_id, author_name,
+    gender, edition_id, edition_year)."""
+    df = df.dropna(subset=["author_id"]).copy()
+    df = df[df["gender"].astype(str).str.lower() == "female"]
 
     records = []
-    for (author_id, author_name, gender), grp in df.groupby(
-        ["author_id", "author_name", "gender"], sort=False
+    for (author_id, author_name), grp in df.groupby(
+        ["author_id", "author_name"], sort=False
     ):
-        edition_keys = grp["edition_key"].unique()
-        # One year per edition_key (min year for that edition)
-        ek_year = grp.groupby("edition_key")["publication_year"].min()
-        years = sorted(ek_year.values.tolist())
+        # One year per edition (min year for that edition)
+        ek_year = grp.groupby("edition_id")["edition_year"].min()
+        years = sorted(int(y) for y in ek_year.values)
 
         records.append(
             {
                 "author_id": author_id,
                 "Author": author_name,
-                "Gender": gender,
-                "Anthologies": len(edition_keys),
+                "Gender": "Female",
+                "Anthologies": grp["edition_id"].nunique(),
                 "First selected": years[0],
                 "Last selected": years[-1],
                 "Largest gap (yrs)": largest_gap(years),
@@ -131,7 +116,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    df = pd.read_csv(DATA_FILE, dtype=str, na_filter=False)
+    df = query_db(query_path("gender-work-consistency"))
     table = build_table(df)
 
     if args.threshold is not None:

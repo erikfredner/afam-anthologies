@@ -6,32 +6,35 @@ works with the same count are alphabetized by work name. Output format:
 "Work Name" by Author Name (10), "Next Work" by Next Author (9), ...
 """
 
-import csv
 import argparse
-import sys
+
+import pandas as pd
+
+from afam.db import query as query_db
+from afam.sql import query_path
 
 
-def load_counts(input_csv):
+def load_counts():
     """
-    Read the input CSV and return a list of (work_name, author_name, anthology_count)
-    for works appearing in 10 or more anthologies.
+    Return a list of (work_name, author_name, anthology_count) for works
+    appearing in 10 or more AFAM anthology editions, read live from the database.
     """
+    counts = query_db(query_path("work-edition-counts-afam"))
+    wide = query_db(query_path("works-authors-per-afam-edition"))
+    author_by_work = (
+        wide.dropna(subset=["author_id"])
+        .drop_duplicates("work_id")
+        .set_index("work_id")["author_name"]
+    )
+
     records = []
-    with open(input_csv, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        # Validate required columns
-        for col in ("work_name", "author_name", "anthology_count"):
-            if col not in reader.fieldnames:
-                sys.exit(f"Error: Column '{col}' not found in input CSV")
-        for row in reader:
-            work = row["work_name"].strip()
-            author = row["author_name"].strip()
-            try:
-                count = int(row["anthology_count"])
-            except ValueError:
-                continue
-            if count >= 10:
-                records.append((work, author, count))
+    for _, row in counts.iterrows():
+        count = int(row["edition_count"])
+        if count < 10:
+            continue
+        author = author_by_work.get(int(row["work_id"]), "")
+        author = "" if pd.isna(author) else author
+        records.append((row["work_title"], author, count))
     return records
 
 
@@ -47,17 +50,10 @@ def format_entries(entries):
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    argparse.ArgumentParser(
         description="Generate formatted list of works with >=10 anthologies."
-    )
-    parser.add_argument(
-        "input_csv",
-        nargs="?",
-        default="data/work_anthology_counts.csv",
-        help="Path to work_anthology_counts.csv",
-    )
-    args = parser.parse_args()
-    entries = load_counts(args.input_csv)
+    ).parse_args()
+    entries = load_counts()
     output = format_entries(entries)
     print(output)
 

@@ -1,57 +1,53 @@
 #!/usr/bin/env python3
 """
-edition_stats_csv.py
+edition_stats.py
 
-Generate a CSV file summarising, for each edition of *The Norton Anthology
-of African American Literature* (NAFAL):
+Summarise, for each edition of *The Norton Anthology of African American
+Literature* (NAAAL, series_id=3), read live from the database:
 
   • Edition          – edition number
   • Total            – distinct authors in that edition
   • Reselected       – authors repeated from the *previous* edition
-  • Newly Selected   – authors who never appeared in any earlier edition
+  • Newly Selected   – authors who never appeared in any earlier NAAAL edition
 
-The resulting file is saved to **data/nafal_edition_stats.csv**.
+The resulting file is saved to **data/naaal_edition_stats.csv**.
 
-Usage
------
-python edition_stats_csv.py path/to/nafam_authors.csv
+Usage:
+    uv run python analysis/summaries/edition_stats.py
 """
 
 import argparse
-import os
-import pathlib
+from pathlib import Path
 
 import pandas as pd
 
+from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.sql import query_path
 
-def compute_stats(csv_path: str) -> pd.DataFrame:
-    # ------------------------------------------------------------------
-    # 1. Read & filter
-    # ------------------------------------------------------------------
-    df = pd.read_csv(csv_path)
-    nafam = df[
-        df["anthology_series"] == "The Norton Anthology of African American Literature"
-    ].copy()
+NAAAL_SERIES_ID = 3
+DEFAULT_OUT = DATA_DIR / "naaal_edition_stats.csv"
 
-    # drop duplicate author‑edition rows
-    nafam = nafam.drop_duplicates(subset=["anthology_edition", "author_id"])
 
-    # ensure numeric, sorted editions
-    nafam["anthology_edition"] = nafam["anthology_edition"].astype(int)
-    nafam = nafam.sort_values("anthology_edition")
+def compute_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """`df` is the wide (work × author × edition) frame."""
+    naaal = df[df["series_id"] == NAAAL_SERIES_ID].dropna(subset=["author_id"])
+    editions = (
+        naaal[["edition_id", "edition_number", "anthology_publication_year"]]
+        .drop_duplicates()
+        .sort_values("anthology_publication_year")
+    )
 
-    # ------------------------------------------------------------------
-    # 2. Compute stats per edition
-    # ------------------------------------------------------------------
     rows = []
-    cumulative_authors: set[int] = set()
-    prev_authors: set[int] | None = None
-
-    for edition, sub in nafam.groupby("anthology_edition"):
-        authors = set(sub["author_id"])
+    cumulative_authors: set = set()
+    prev_authors: set | None = None
+    for _, ed in editions.iterrows():
+        eid = int(ed["edition_id"])
+        authors = set(naaal.loc[naaal["edition_id"] == eid, "author_id"])
         rows.append(
             {
-                "Edition": edition,
+                "Edition": ed["edition_number"],
+                "Year": int(ed["anthology_publication_year"]),
                 "Total": len(authors),
                 "Reselected": len(authors & prev_authors) if prev_authors else 0,
                 "Newly Selected": len(authors - cumulative_authors),
@@ -60,27 +56,26 @@ def compute_stats(csv_path: str) -> pd.DataFrame:
         cumulative_authors |= authors
         prev_authors = authors
 
-    return pd.DataFrame(rows).sort_values("Edition")
+    return pd.DataFrame(rows)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("csv", help="Input CSV with author / anthology data")
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--out",
-        default="data/nafal_edition_stats.csv",
-        help="Output CSV (default: data/nafal_edition_stats.csv)",
+        default=str(DEFAULT_OUT),
+        help=f"Output CSV (default: {DEFAULT_OUT})",
     )
     args = parser.parse_args()
 
-    stats_df = compute_stats(args.csv)
+    df = query_db(query_path("works-authors-per-afam-edition"))
+    stats_df = compute_stats(df)
 
-    # ensure data/ directory exists
-    out_path = pathlib.Path(args.out)
-    os.makedirs(out_path.parent, exist_ok=True)
-
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     stats_df.to_csv(out_path, index=False)
-    print(f"[INFO] Saved edition statistics → {out_path}")
+    print(stats_df.to_string(index=False))
+    print(f"\n[INFO] Saved edition statistics → {out_path}")
 
 
 if __name__ == "__main__":

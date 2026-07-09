@@ -114,7 +114,7 @@ def built():
 
     raw = make_raw(poetry_rows())
     outputs = afc.compute(raw)
-    table = build_poet_dispersal(outputs, raw, min_editions=2)
+    table = build_poet_dispersal(outputs, raw, raw, min_editions=2)
     return table.set_index("author_name")
 
 
@@ -161,8 +161,18 @@ def test_min_editions_filter():
 
     raw = make_raw(poetry_rows())
     outputs = afc.compute(raw)
-    table = build_poet_dispersal(outputs, raw, min_editions=5)
+    table = build_poet_dispersal(outputs, raw, raw, min_editions=5)
     assert table.empty
+
+
+def test_distinct_works_all_forms_counts_every_work(built):
+    # raw_all == raw here (poetry-only fixture), so the all-forms distinct-works
+    # count equals each poet's distinct poems. Brown spreads across more works.
+    brown = built.loc["Sterling Brown"]
+    hughes = built.loc["Langston Hughes"]
+    assert brown["distinct_works_all_forms"] == 4
+    assert hughes["distinct_works_all_forms"] == 2
+    assert brown["distinct_works_all_forms"] > hughes["distinct_works_all_forms"]
 
 
 # ── leaf-work filtering ──────────────────────────────────────────────────────────

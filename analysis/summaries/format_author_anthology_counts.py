@@ -6,32 +6,23 @@ authors with the same count are alphabetized. Output format:
 "Author Name (10), Next Author (9), ..."
 """
 
-import csv
 import argparse
-import sys
+
+from afam.db import query as query_db
+from afam.sql import query_path
 
 
-def load_counts(input_csv):
+def load_counts():
     """
-    Read the input CSV and return a list of (author_name, anthology_count)
-    for authors appearing in 10 or more anthologies.
+    Return a list of (author_name, anthology_count) for authors appearing in 10
+    or more AFAM anthology editions, read live from the database.
     """
-    records = []
-    with open(input_csv, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        # Validate required columns
-        for col in ("author_name", "anthology_count"):
-            if col not in reader.fieldnames:
-                sys.exit(f"Error: Column '{col}' not found in input CSV")
-        for row in reader:
-            name = row["author_name"].strip()
-            try:
-                count = int(row["anthology_count"])
-            except ValueError:
-                continue
-            if count >= 10:
-                records.append((name, count))
-    return records
+    df = query_db(query_path("author-edition-counts-afam"))
+    return [
+        (name, int(count))
+        for name, count in zip(df["author_name"], df["edition_count"])
+        if int(count) >= 10
+    ]
 
 
 def format_authors(authors):
@@ -45,17 +36,10 @@ def format_authors(authors):
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    argparse.ArgumentParser(
         description="Generate formatted list of authors with >=10 anthologies."
-    )
-    parser.add_argument(
-        "input_csv",
-        nargs="?",
-        default="data/author_anthology_counts.csv",
-        help="Path to author_anthology_counts.csv",
-    )
-    args = parser.parse_args()
-    authors = load_counts(args.input_csv)
+    ).parse_args()
+    authors = load_counts()
     output = format_authors(authors)
     print(output)
 

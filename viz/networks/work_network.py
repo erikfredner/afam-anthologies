@@ -24,6 +24,32 @@ import pandas as pd
 from adjustText import adjust_text
 from matplotlib import colormaps, colors
 
+from afam.db import query as query_db
+from afam.sql import query_path
+
+
+# ---------------------------------------------------------------------
+# 0. Default data source (live DB)
+# ---------------------------------------------------------------------
+def load_from_db() -> pd.DataFrame:
+    """Work × edition rows for the AFAM tradition, shaped to the columns the
+    graph builder expects. Groups (anthology nodes) are keyed on edition_id."""
+    raw = query_db(query_path("works-authors-per-afam-edition")).copy()
+    series_name = raw["series_id"].apply(
+        lambda v: "standalone" if pd.isna(v) else f"series {int(v)}"
+    )
+    edition_id = raw["edition_id"].astype(int)
+    return pd.DataFrame(
+        {
+            "work_id": raw["work_id"].astype(int),
+            "work_title": raw["work_title"],
+            "author_name": raw["author_name"].fillna(""),
+            "series_name": series_name,
+            "anthology_edition": edition_id,
+            "group_id": edition_id,
+        }
+    )
+
 
 # ---------------------------------------------------------------------
 # 1. Helper: collapsed edition ID
@@ -265,7 +291,11 @@ def draw_graph(G: nx.Graph, outfile: pathlib.Path, seed: int = 42) -> None:
 # ---------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", required=True, help="Input works CSV file")
+    parser.add_argument(
+        "--csv",
+        default=None,
+        help="Optional input works CSV (default: live DB, AFAM tradition)",
+    )
     parser.add_argument("--out", default="work_network.png", help="Output PNG file")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for layout")
     parser.add_argument(
@@ -276,11 +306,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    df = pd.read_csv(args.csv)
-    # create group id for anthology-edition
-    df["group_id"] = df.apply(
-        lambda r: make_group_id(r["series_name"], r["anthology_edition"]), axis=1
-    )
+    if args.csv:
+        df = pd.read_csv(args.csv)
+        # create group id for anthology-edition
+        df["group_id"] = df.apply(
+            lambda r: make_group_id(r["series_name"], r["anthology_edition"]), axis=1
+        )
+    else:
+        df = load_from_db()
 
     # build full co-occurrence to compute work strengths
     cooc_full = build_cooccurrence(df)

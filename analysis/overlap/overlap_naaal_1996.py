@@ -4,9 +4,15 @@ and all anthologies published before 1996.
 """
 
 import argparse
-from typing import Set
 
-from afam.data import load_csv
+from afam.db import query as query_db
+from afam.sql import query_path
+
+# NAAAL first edition: series_id=3, edition_number="1". Prior pool = AFAM
+# editions published before 1996 (matching the original CSV analysis cutoff).
+NAAAL_SERIES_ID = 3
+NAAAL_EDITION_NUMBER = "1"
+PRIOR_CUTOFF_YEAR = 1996
 
 
 def main() -> None:
@@ -17,48 +23,30 @@ def main() -> None:
     parser.add_argument(
         "--only-root-works",
         action="store_true",
-        help="Limit work-level overlap analysis to works without parent works (parent_work_title empty).",
+        help="Limit work-level overlap analysis to works without a parent work.",
     )
     args = parser.parse_args()
-    df = load_csv("202505121539 authors works.csv")
-    # Ensure series_id column exists for edition_key logic
-    if "series_id" not in df.columns:
-        df["series_id"] = ""
+    df = query_db(query_path("works-authors-per-afam-edition"))
 
-    # Create a helper column for unique edition identification
-    df["edition_key"] = df.apply(
-        lambda row: (
-            f"{row['series_id']}_{row['anthology_edition']}"
-            if row["series_id"]
-            else row["anthology_id"]
-        ),
-        axis=1,
-    )
-
-    # Identify NAAAL 1996 first edition
-    mask_naaal_1996 = (
-        (
-            df["anthology_series"]
-            == "The Norton Anthology of African American Literature"
-        )
-        & (df["anthology_edition"] == "1")
-        & (df["anthology_year"] == "1996")
-    )
-    naaal_1996 = df.loc[mask_naaal_1996]
+    # Identify NAAAL first edition
+    naaal_1996 = df[
+        (df["series_id"] == NAAAL_SERIES_ID)
+        & (df["edition_number"] == NAAAL_EDITION_NUMBER)
+    ]
     # Optionally restrict to root works only
     if args.only_root_works:
-        naaal_works = naaal_1996[naaal_1996["parent_work_title"] == ""]
+        naaal_works = naaal_1996[naaal_1996["parent_id"].isna()]
     else:
         naaal_works = naaal_1996
-    works_naaal_1996: Set[str] = set(naaal_works["work_id"])
+    works_naaal_1996: set = set(naaal_works["work_id"])
 
     # Identify all pre-1996 anthologies
-    pre1996 = df[df["anthology_year"].astype(int) < 1996]
+    pre1996 = df[df["anthology_publication_year"] < PRIOR_CUTOFF_YEAR]
     if args.only_root_works:
-        pre1996_works = pre1996[pre1996["parent_work_title"] == ""]
+        pre1996_works = pre1996[pre1996["parent_id"].isna()]
     else:
         pre1996_works = pre1996
-    works_pre1996: Set[str] = set(pre1996_works["work_id"])
+    works_pre1996: set = set(pre1996_works["work_id"])
 
     # Guard clauses
     if not works_naaal_1996:
@@ -89,9 +77,9 @@ def main() -> None:
     print(f"Summary: {summary}")
     # Compute author overlap metrics
     # Authors of NAAAL 1996 works
-    authors_naaal_1996: Set[str] = set(naaal_1996["work_author"])
+    authors_naaal_1996: set = set(naaal_1996["author_id"].dropna())
     # Authors in pre-1996 anthologies
-    authors_pre1996: Set[str] = set(pre1996["work_author"])
+    authors_pre1996: set = set(pre1996["author_id"].dropna())
     # Compute author overlap
     overlap_authors = authors_naaal_1996 & authors_pre1996
     total_authors = len(authors_naaal_1996)

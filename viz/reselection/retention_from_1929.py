@@ -20,13 +20,14 @@ import pandas as pd
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
-from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.editions import EDITION_LABELS
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
-DATA_FILE = DATA_DIR / "2026-03-13 works per afam anthology.csv"
 OUT_DIR = OUTPUT_DIR
 
-REF_EDITION_KEY = "67"  # 1929 anthology (series_id empty → edition_key = anthology_id)
+REF_EDITION_KEY = "72"  # 1929 Anthology of American Negro Literature (Calverton)
 
 
 # ── Style constants (match work_selection_divergence.py) ───────────────────────
@@ -36,43 +37,11 @@ C_RED = "#d62728"
 GRID_KW = dict(alpha=0.25, linestyle=":")
 
 
-# ── Label dicts (from work_selection_divergence.py) ───────────────────────────
-
-SERIES_ID_ABBREV: dict[str, str] = {
-    "3": "NAAAL",
-    "8": "Afro-Am. Writing",
-    "12": "AAL Anthology",
-    "17": "Wiley Blackwell AAL",
-    "19": "Cavalcade",
-}
-
-STANDALONE_SHORT: dict[str, str] = {
-    "67": "Amer. Negro Lit.",
-    "66": "Readings fr. Negro Authors",
-    "62": "Negro Caravan",
-    "63": "Amer. Lit. by Negro Authors",
-    "56": "Intro to Black Lit.",
-    "43": "Black Voices",
-    "42": "Cavalcade",
-    "46": "Black Insights",
-    "48": "Black Lit. in America",
-    "47": "Black Writers of America",
-    "109": "Black Culture",
-    "64": "Cornerstones",
-    "44": "AAL Brief Intro",
-    "49": "Call & Response",
-    "39": "Prentice Hall AAL",
-    "86": "Afr. Am. Lit.",
-    "50": "Blackamerican Lit.",
-}
+# ── Labels ─────────────────────────────────────────────────────────────────────
 
 
 def make_label(edition_key: str, year: int) -> str:
-    if "|" in edition_key:
-        series_id, edition = edition_key.rsplit("|", 1)
-        abbrev = SERIES_ID_ABBREV.get(series_id, series_id)
-        return f"{abbrev} ed.{edition}\n{year}"
-    short = STANDALONE_SHORT.get(edition_key, edition_key[:20])
+    short = EDITION_LABELS.get(int(edition_key), str(edition_key))
     return f"{short}\n{year}"
 
 
@@ -86,48 +55,31 @@ def _normalize_title(t: str) -> str:
     return t.strip()
 
 
-# ── Load and prepare (private copy from cumulative_pairwise_agreement.py) ──────
+# ── Load and prepare ───────────────────────────────────────────────────────────
 
 
-def _load_and_prepare(data_file: Path) -> pd.DataFrame:
-    df = pd.read_csv(data_file, dtype=str, na_filter=False)
-    print(f"Loaded {len(df)} rows, {df['anthology_id'].nunique()} raw anthologies")
+def _load_and_prepare() -> pd.DataFrame:
+    """Long (author × edition) table from the live DB.
 
-    # Build edition_key: series_id|edition when series, else anthology_id
-    df["edition_key"] = df.apply(
-        lambda r: (
-            f"{r['series_id']}|{r['anthology_edition']}"
-            if r["series_id"].strip()
-            else r["anthology_id"]
-        ),
-        axis=1,
+    Columns match the legacy CSV shape consumed by compute_retention:
+    edition_key (= edition_id as string), ek_year, author_id, norm_title.
+    Works without an author are dropped (retention is keyed on authors).
+    """
+    raw = query_db(query_path("works-authors-per-afam-edition"))
+    raw = raw.dropna(subset=["author_id"]).copy()
+    long = pd.DataFrame(
+        {
+            "edition_key": raw["edition_id"].astype(int).astype(str),
+            "ek_year": raw["anthology_publication_year"].astype(int),
+            "author_id": raw["author_id"].astype(int).astype(str),
+            "norm_title": raw["work_title"].apply(_normalize_title),
+        }
     )
-
-    # Year per edition_key (minimum year across volumes of same edition)
-    year_by_key = (
-        df.groupby("edition_key")["anthology_publication_year"].min().astype(int)
+    print(
+        f"Loaded {len(long)} long rows, "
+        f"{long['edition_key'].nunique()} editions, "
+        f"{long['author_id'].nunique()} authors"
     )
-    df["ek_year"] = df["edition_key"].map(year_by_key)
-
-    # Normalize work titles
-    df["norm_title"] = df["work_title"].apply(_normalize_title)
-
-    # Explode multi-author rows — split author_ids on ","
-    df["_author_list"] = df["author_ids"].apply(
-        lambda s: [i.strip() for i in s.split(",") if i.strip()]
-    )
-    df_auth = df[df["_author_list"].apply(len) > 0].copy()
-    df_auth = df_auth.explode("_author_list")
-    df_auth = df_auth.rename(columns={"_author_list": "author_id"})
-
-    long = df_auth.drop(
-        columns=[c for c in df_auth.columns if c.startswith("_")],
-        errors="ignore",
-    )
-
-    print(f"  Unique edition_keys: {long['edition_key'].nunique()}")
-    print(f"  Unique authors: {long['author_id'].nunique()}")
-    print(f"  Total long rows: {len(long)}")
     return long
 
 
@@ -221,7 +173,7 @@ def plot_retention(df: pd.DataFrame, out_path: Path) -> None:
 
 
 def main() -> None:
-    long = _load_and_prepare(DATA_FILE)
+    long = _load_and_prepare()
     df = compute_retention(long, REF_EDITION_KEY)
 
     print(f"\nRetention rows: {len(df)} subsequent editions")

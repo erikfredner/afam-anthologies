@@ -21,10 +21,10 @@ from statsmodels.stats.contingency_tables import StratifiedTable
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
-from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
-DATA_FILE = DATA_DIR / "2026-03-17 af am anthology authors with genders.csv"
 OUT_DIR = OUTPUT_DIR
 
 # ── Style constants (from retention_from_1929.py) ─────────────────────────────
@@ -174,28 +174,19 @@ def compute_cumulative(agg: pd.DataFrame) -> pd.DataFrame:
 # ── Load and prepare ───────────────────────────────────────────────────────────
 
 
-def _load_and_prepare(data_file: Path) -> pd.DataFrame:
-    df = pd.read_csv(data_file, dtype=str, na_filter=False)
-    print(f"Loaded {len(df)} rows, {df['anthology_id'].nunique()} raw anthologies")
-
-    # Build edition_key: series_id|edition when series, else anthology_id
-    df["edition_key"] = df.apply(
-        lambda r: (
-            f"{r['series_id']}|{r['edition']}"
-            if r["series_id"].strip()
-            else r["anthology_id"]
-        ),
-        axis=1,
+def _load_and_prepare() -> pd.DataFrame:
+    """Long (author × edition) frame from the live DB with the columns the
+    opportunity logic consumes: author_id, gender_group, edition_key
+    (= edition_id), ek_year."""
+    raw = query_db(query_path("gender-work-consistency")).dropna(subset=["author_id"])
+    df = pd.DataFrame(
+        {
+            "author_id": raw["author_id"].astype(int),
+            "edition_key": raw["edition_id"].astype(int),
+            "ek_year": raw["edition_year"].astype(int),
+            "gender_group": raw["gender"].apply(build_gender_group),
+        }
     )
-
-    # Year per edition_key (minimum publication_year across volumes of same edition)
-    df["_pub_year"] = pd.to_numeric(df["publication_year"], errors="coerce")
-    year_by_key = df.groupby("edition_key")["_pub_year"].min().astype(int)
-    df["ek_year"] = df["edition_key"].map(year_by_key)
-    df.drop(columns=["_pub_year"], inplace=True)
-
-    # Gender group
-    df["gender_group"] = df["gender"].apply(build_gender_group)
 
     print(f"  Unique edition_keys: {df['edition_key'].nunique()}")
     print(f"  Unique authors: {df['author_id'].nunique()}")
@@ -437,7 +428,7 @@ def plot_diverging(cum_ek: pd.DataFrame, out_path: Path) -> None:
 
 
 def main() -> None:
-    df = _load_and_prepare(DATA_FILE)
+    df = _load_and_prepare()
 
     # One row per (author, edition)
     selections = df.drop_duplicates(["author_id", "edition_key"])[

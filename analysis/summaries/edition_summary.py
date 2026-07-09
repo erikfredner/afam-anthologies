@@ -2,73 +2,73 @@
 """
 edition_summary.py
 
-Reads an input CSV of anthology works and computes, for each edition:
+For each AFAM-tagged anthology edition (read live from the database, ordered by
+year), computes:
   - total works,
-  - works reselected from the previous edition,
+  - works reselected from the previous edition (chronologically),
   - percentage reselected.
 
-Outputs a summary CSV to the `data/` directory.
+Outputs a summary CSV to the `data/` directory and prints it.
 
-Sample CLI usage:
-    python edition_summary.py path/to/input.csv
+Usage:
+    uv run python analysis/summaries/edition_summary.py
 """
 
-import os
 import argparse
+
 import pandas as pd
+
+from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.editions import EDITION_LABELS
+from afam.sql import query_path
+
+OUT_CSV = DATA_DIR / "edition_summary.csv"
 
 
 def compute_edition_summary(df: pd.DataFrame) -> pd.DataFrame:
-    # Ensure correct dtypes
-    df["anthology_edition"] = df["anthology_edition"].astype(int)
-    df = df.dropna(subset=["work_id", "anthology_edition"])
+    """`df` is the wide (work × author × edition) frame."""
+    editions = (
+        df[["edition_id", "anthology_publication_year"]]
+        .drop_duplicates()
+        .sort_values(["anthology_publication_year", "edition_id"])
+    )
 
-    editions = sorted(df["anthology_edition"].unique())
     summary_rows = []
-
-    prev_ids = set()
-    for ed in editions:
-        current_ids = set(df.loc[df["anthology_edition"] == ed, "work_id"])
+    prev_ids: set = set()
+    for _, ed in editions.iterrows():
+        eid = int(ed["edition_id"])
+        current_ids = set(df.loc[df["edition_id"] == eid, "work_id"])
         total = len(current_ids)
         reselected = len(current_ids & prev_ids)
         pct = (reselected / total * 100) if total else 0.0
 
         summary_rows.append(
             {
-                "Edition": ed,
+                "edition_id": eid,
+                "Edition": EDITION_LABELS.get(eid, str(eid)),
+                "Year": int(ed["anthology_publication_year"]),
                 "Works": total,
                 "Works reselected": reselected,
                 "Works reselected %": round(pct, 2),
             }
         )
-
         prev_ids = current_ids
 
     return pd.DataFrame(summary_rows)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Summarize anthology editions from a works CSV."
-    )
-    parser.add_argument("input_csv", help="Path to the input CSV file")
-    args = parser.parse_args()
+    argparse.ArgumentParser(
+        description="Summarize anthology editions from the live database."
+    ).parse_args()
 
-    # Read the input CSV
-    df = pd.read_csv(args.input_csv)
-
-    # Compute the edition summary
+    df = query_db(query_path("works-authors-per-afam-edition"))
     summary_df = compute_edition_summary(df)
 
-    # Prepare output path
-    input_basename = os.path.splitext(os.path.basename(args.input_csv))[0]
-    output_dir = "data"
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"{input_basename}_edition_summary.csv")
-
-    # Write to CSV
-    summary_df.to_csv(output_path, index=False)
-    print(f"Summary written to {output_path}")
+    summary_df.to_csv(OUT_CSV, index=False)
+    print(summary_df.to_string(index=False))
+    print(f"\nSummary written to {OUT_CSV}")
 
 
 if __name__ == "__main__":

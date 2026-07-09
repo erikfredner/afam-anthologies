@@ -30,12 +30,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import pandas as pd
 
-from afam import DATA_DIR
-from afam.editions import EDITION_LABELS
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "analysis" / "predictability"))
+
+from predictability_over_time import compute_per_edition  # noqa: E402
+
+from afam import DATA_DIR  # noqa: E402
+from afam.editions import EDITION_LABELS  # noqa: E402
 
 OUTPUT_BASENAMES = {
     "authors": "predictability_new_focus_per_edition_authors.csv",
@@ -95,12 +101,6 @@ def print_table(entity: str, table: pd.DataFrame) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--csv-dir",
-        type=Path,
-        default=DATA_DIR,
-        help=f"Where to read predictability_over_time_*.csv (default: {DATA_DIR})",
-    )
-    parser.add_argument(
         "--out-dir",
         type=Path,
         default=DATA_DIR,
@@ -111,7 +111,7 @@ def main() -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     for entity in ("authors", "works"):
-        per_ed = pd.read_csv(args.csv_dir / f"predictability_over_time_{entity}.csv")
+        per_ed = compute_per_edition(entity)
         table = build_table(per_ed)
         print_table(entity, table)
         out_path = args.out_dir / OUTPUT_BASENAMES[entity]

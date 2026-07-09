@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -31,11 +32,14 @@ import numpy as np
 import pandas as pd
 from scipy.stats import linregress, spearmanr
 
-from afam import DATA_DIR
-from afam.editions import EDITION_LABELS
-from afam.viz_style import OUTPUT_DIR
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "analysis" / "predictability"))
 
-DEFAULT_CSV_DIR = DATA_DIR
+from predictability_over_time import compute_per_edition  # noqa: E402
+
+from afam.editions import EDITION_LABELS  # noqa: E402
+from afam.viz_style import OUTPUT_DIR  # noqa: E402
+
 DEFAULT_OUT = OUTPUT_DIR / "predictability_new_focus.png"
 
 POINT_COLOR = "#111111"
@@ -248,12 +252,6 @@ def build_figure(authors_df: pd.DataFrame, works_df: pd.DataFrame) -> plt.Figure
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--csv-dir",
-        type=Path,
-        default=DEFAULT_CSV_DIR,
-        help=f"Where to read the predictability CSVs (default: {DEFAULT_CSV_DIR})",
-    )
-    parser.add_argument(
         "--out",
         type=Path,
         default=DEFAULT_OUT,
@@ -261,12 +259,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    authors = add_new_columns(
-        pd.read_csv(args.csv_dir / "predictability_over_time_authors.csv")
-    )
-    works = add_new_columns(
-        pd.read_csv(args.csv_dir / "predictability_over_time_works.csv")
-    )
+    authors = add_new_columns(compute_per_edition("authors"))
+    works = add_new_columns(compute_per_edition("works"))
     fig = build_figure(authors, works)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=200, bbox_inches="tight")

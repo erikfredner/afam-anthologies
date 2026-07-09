@@ -2,71 +2,55 @@
 """
 naal_exclusive_authors.py
 
-Select authors who appear in any edition of The Norton Anthology of African American Literature (NAAL)
-but in no edition of The Norton Anthology of American Literature (Norton American). For each such author,
-count the number of NAAL editions they appear in. Print a single line listing authors as
-"Author Name (count), Next Author (count), …", ordered by edition count descending (4→1) and
-alphabetically within each count group.
+Authors who appear in any edition of The Norton Anthology of African American
+Literature (NAAAL, series_id=3) but in no edition of The Norton Anthology of
+American Literature (Norton American, series_id=1), read live from the database.
+For each, count the number of NAAAL editions they appear in, and print a single
+line "Author Name (count), …" ordered by edition count descending then name.
 
-Sample CLI usage:
-    python viz/naal_exclusive_authors.py data/202504211417_naal_nafam_authors.csv
+Usage:
+    uv run python analysis/summaries/naal_exclusive_authors.py
 """
 
 import argparse
-import csv
-import sys
+
+from afam.db import query as query_db
+from afam.sql import query_path
+
+NAAAL_SERIES_ID = 3
+NAFAM_SERIES_ID = 1
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="List authors exclusive to NAAL with counts of NAAL editions."
+    argparse.ArgumentParser(
+        description="List authors exclusive to NAAAL with counts of NAAAL editions."
+    ).parse_args()
+
+    df = query_db(query_path("naal-american-authors-works")).dropna(
+        subset=["author_id"]
     )
-    parser.add_argument(
-        "input_csv",
-        help='Path to input CSV (must include "author_name", "anthology_series", and "anthology_edition" columns)',
-    )
-    args = parser.parse_args()
+    naal = df[df["series_id"] == NAAAL_SERIES_ID]
+    nafam_author_ids = set(df.loc[df["series_id"] == NAFAM_SERIES_ID, "author_id"])
 
-    NAAL = "The Norton Anthology of African American Literature"
-    NAFAM = "The Norton Anthology of American Literature"
+    naal_counts = naal.groupby("author_id")["edition_id"].nunique()
+    name_map = naal.drop_duplicates("author_id").set_index("author_id")["author_name"]
 
-    naal_editions = {}
-    nafam_authors = set()
-    try:
-        with open(args.input_csv, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for col in ("author_name", "anthology_series", "anthology_edition"):
-                if col not in reader.fieldnames:
-                    sys.exit(f"ERROR: Expected column '{col}' in {args.input_csv}")
-            for row in reader:
-                author = row["author_name"].strip()
-                series = row["anthology_series"].strip()
-                edition = row["anthology_edition"].strip()
-                if series == NAAL:
-                    naal_editions.setdefault(author, set()).add(edition)
-                elif series == NAFAM:
-                    nafam_authors.add(author)
-    except FileNotFoundError:
-        sys.exit(f"ERROR: File not found: {args.input_csv}")
-
-    # Filter authors exclusive to NAAL and count editions
     exclusive = {
-        author: len(editions)
-        for author, editions in naal_editions.items()
-        if author not in nafam_authors
+        name_map[aid]: int(cnt)
+        for aid, cnt in naal_counts.items()
+        if aid not in nafam_author_ids
     }
 
     if not exclusive:
         print("")
         return
 
-    # Group authors by edition count and prepare output
-    count_groups = {}
+    count_groups: dict[int, list[str]] = {}
     for author, cnt in exclusive.items():
         count_groups.setdefault(cnt, []).append(author)
 
     entries = []
-    for cnt in sorted(count_groups.keys(), reverse=True):
+    for cnt in sorted(count_groups, reverse=True):
         for author in sorted(count_groups[cnt]):
             entries.append(f"{author} ({cnt})")
 

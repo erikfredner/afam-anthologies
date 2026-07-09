@@ -53,8 +53,6 @@ from afam.sql import query_path
 warnings.simplefilter("ignore", ConvergenceWarning)
 warnings.simplefilter("ignore", RuntimeWarning)
 
-GENDER_CSV = DATA_DIR / "2026-03-17 af am anthology authors with genders.csv"
-
 FREQUENT_CANON_THRESHOLD = 3
 MIN_SUBGROUP_SIZE = 5
 
@@ -155,14 +153,17 @@ def build_author_per_edition(
 # ── Subgroup tagging ──────────────────────────────────────────────────────────
 
 
-def load_gender_map(gender_csv: Path) -> dict[int, str]:
-    if not gender_csv.exists():
-        return {}
-    df = pd.read_csv(gender_csv, dtype=str, na_filter=False)
-    df = df[df["gender"].str.strip() != ""]
-    df["gender"] = df["gender"].str.strip().str.lower()
-    df["author_id"] = pd.to_numeric(df["author_id"], errors="coerce")
-    df = df.dropna(subset=["author_id"])
+def load_gender_map() -> dict[int, str]:
+    """Map author_id → lowercased gender label, read live from the database.
+
+    Backed by gender-work-consistency.sql, which collapses the many-to-many
+    data_author_genders to one label per author. Authors without a gender are
+    omitted (callers fill them as "unknown").
+    """
+    df = query_db(query_path("gender-work-consistency"))
+    df = df.dropna(subset=["author_id", "gender"]).copy()
+    df["gender"] = df["gender"].astype(str).str.strip().str.lower()
+    df = df[df["gender"] != ""]
     df["author_id"] = df["author_id"].astype(int)
     return dict(df.drop_duplicates("author_id")[["author_id", "gender"]].values)
 
@@ -604,6 +605,30 @@ def print_subgroup_summary(trends: pd.DataFrame, metric: str = "logit_auc") -> N
         print()
 
 
+# ── Public compute entry point ────────────────────────────────────────────────
+
+
+def compute_per_edition(mode: str, include_excerpts: bool = False) -> pd.DataFrame:
+    """Run the DB pipeline and return the per-(subgroup, edition) metric frame.
+
+    `mode` is "authors" or "works". This is the in-memory equivalent of the
+    `predictability_over_time_{mode}.csv` artifact, so downstream scripts import
+    it instead of reading those CSVs.
+    """
+    raw = query_db(query_path("predictability_over_time"))
+    if mode == "authors":
+        spans = compute_work_volume_spans(raw)
+        author_per_ed = build_author_per_edition(raw, spans)
+        author_per_ed = attach_subgroups_authors(author_per_ed, load_gender_map())
+        return compute_all_metrics(author_per_ed, "authors")
+
+    raw_works = raw if include_excerpts else raw[raw["parent_id"].isna()].copy()
+    spans = compute_work_volume_spans(raw_works)
+    work_per_ed = build_work_per_edition(raw_works, spans)
+    work_per_ed = attach_subgroups_works(work_per_ed)
+    return compute_all_metrics(work_per_ed, "works")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 
@@ -630,12 +655,6 @@ def main() -> None:
         type=Path,
         default=DATA_DIR,
         help=f"Output directory for CSVs (default: {DATA_DIR})",
-    )
-    parser.add_argument(
-        "--gender-csv",
-        type=Path,
-        default=GENDER_CSV,
-        help=f"Path to gender annotations (default: {GENDER_CSV.name})",
     )
     args = parser.parse_args()
 
@@ -670,7 +689,7 @@ def main() -> None:
 
     for mode in modes:
         if mode == "authors":
-            gender_map = load_gender_map(args.gender_csv)
+            gender_map = load_gender_map()
             author_per_ed = build_author_per_edition(raw, work_volume_spans_all)
             author_per_ed = attach_subgroups_authors(author_per_ed, gender_map)
             per_ed = compute_all_metrics(author_per_ed, "authors")

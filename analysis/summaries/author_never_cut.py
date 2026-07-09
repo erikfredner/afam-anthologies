@@ -2,43 +2,53 @@
 """
 author_never_cut.py
 
-Reads an input CSV of anthology authors by edition and computes the overall probability,
-odds, and standard error that an author will never be cut in any subsequent edition
-(i.e., once they appear, they remain in every later edition).
+Reads AFAM anthology authors by edition from the live database and computes the
+overall probability, odds, and standard error that an author is never cut in any
+subsequent edition (i.e., once they debut they remain in every later edition,
+through the final edition). Editions are ordered chronologically by year.
 
 Writes the results to stdout.
 
-Sample CLI usage:
-    python author_never_cut.py path/to/input.csv
+Usage:
+    uv run python analysis/summaries/author_never_cut.py
 """
 
 import argparse
-import pandas as pd
 import math
+
+import pandas as pd
+
+from afam.db import query as query_db
+from afam.sql import query_path
 
 
 def compute_never_cut_stats(df: pd.DataFrame):
-    # ensure edition is integer
-    df["anthology_edition"] = df["anthology_edition"].astype(int)
-    all_editions = sorted(df["anthology_edition"].unique())
-    max_edition = all_editions[-1]
+    """`df` is the wide (work × author × edition) frame. Editions are positioned
+    chronologically by year (ties broken by edition_id)."""
+    editions = (
+        df[["edition_id", "anthology_publication_year"]]
+        .drop_duplicates()
+        .sort_values(["anthology_publication_year", "edition_id"])
+        .reset_index(drop=True)
+    )
+    position = {int(e): i for i, e in enumerate(editions["edition_id"])}
+    max_position = len(editions) - 1
 
-    # group by author
-    author_groups = df.groupby("author_id")["anthology_edition"].unique()
+    author_groups = (
+        df.dropna(subset=["author_id"]).groupby("author_id")["edition_id"].unique()
+    )
 
     at_risk = 0
     never_cut = 0
-
-    for editions in author_groups:
-        min_ed = editions.min()
+    for eds in author_groups:
+        positions = sorted({position[int(e)] for e in eds})
+        min_pos = positions[0]
         # only authors who have at least one subsequent edition
-        if min_ed < max_edition:
+        if min_pos < max_position:
             at_risk += 1
-            # require author appears in every edition from their first through the final
-            expected_count = max_edition - min_ed + 1
-            actual_count = len(editions)
-            last_ed = editions.max()
-            if last_ed == max_edition and actual_count == expected_count:
+            # require presence in every edition from debut through the final
+            expected_count = max_position - min_pos + 1
+            if positions[-1] == max_position and len(positions) == expected_count:
                 never_cut += 1
 
     # compute probability, odds, and standard error
@@ -50,16 +60,11 @@ def compute_never_cut_stats(df: pd.DataFrame):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Compute probability that an author is never cut in subsequent editions."
-    )
-    parser.add_argument(
-        "input_csv",
-        help='Path to the input CSV (must include "author_id" and "anthology_edition" columns)',
-    )
-    args = parser.parse_args()
+    argparse.ArgumentParser(
+        description="Probability that an author is never cut in subsequent editions."
+    ).parse_args()
 
-    df = pd.read_csv(args.input_csv)
+    df = query_db(query_path("works-authors-per-afam-edition"))
     at_risk, never_cut, p, odds, se = compute_never_cut_stats(df)
 
     # output to stdout

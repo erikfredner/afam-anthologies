@@ -117,6 +117,31 @@ def empirical_rates(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def cumulative_buckets(frame: pd.DataFrame, kmax: int | None = None) -> pd.DataFrame:
+    """For each threshold k, the selection rate among entities with prior_count
+    >= k. Reproduces the cumulative ">= k priors" method (formerly in the
+    CSV-backed freq_bucket_predictability.py): pools all higher-prior entities
+    rather than reading a single per-point rate. Pass the min_prior=0 frame so
+    every entity is represented.
+    """
+    if kmax is None:
+        kmax = int(frame["prior_count"].max())
+    rows = []
+    for k in range(1, kmax + 1):
+        sub = frame[frame["prior_count"] >= k]
+        n = len(sub)
+        selected = int(sub["in_target"].sum())
+        rows.append(
+            {
+                "threshold": k,
+                "n": n,
+                "selected": selected,
+                "pct": (100.0 * selected / n) if n else 0.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def predicted_probabilities(result: Any, max_count: int) -> pd.DataFrame:
     counts = np.arange(0, max_count + 1, dtype=int)
     X = sm.add_constant(pd.Series(counts, name="prior_count"), has_constant="add")
@@ -256,6 +281,18 @@ def run_mode(
         f"{curve_df['probability'].min():.3f} to {curve_df['probability'].max():.3f}"
     )
     print(f"Saved figure                         : {fig_path}")
+
+    buckets = cumulative_buckets(full_frame)
+    print(f"Cumulative '>= k prior anthologies' selection rate ({mode}):")
+    for _, r in buckets.iterrows():
+        print(
+            f"  >= {int(r['threshold']):>2} priors : "
+            f"{int(r['selected']):>4}/{int(r['n']):>4}  = {r['pct']:5.1f}%"
+        )
+    crossed = buckets[buckets["pct"] > 50]
+    if not crossed.empty:
+        k = int(crossed.iloc[0]["threshold"])
+        print(f"  -> first threshold with >50% selected: >= {k} prior anthologies")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

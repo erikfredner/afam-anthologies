@@ -16,30 +16,39 @@ Sample CLI usage:
     python reselection_probability.py path/to/input.csv
 """
 
-import os
 import argparse
-import pandas as pd
 import math
+
+import pandas as pd
+
+from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.editions import EDITION_LABELS
+from afam.sql import query_path
+
+OUT_CSV = DATA_DIR / "author_reselection_summary.csv"
 
 
 def compute_reselection_summary(df: pd.DataFrame):
-    # ensure edition is integer
-    df["anthology_edition"] = df["anthology_edition"].astype(int)
-    editions = sorted(df["anthology_edition"].unique())
+    """`df` is the wide (work × author × edition) frame. Editions are ordered
+    chronologically by year (ties broken by edition_id)."""
+    editions = (
+        df[["edition_id", "anthology_publication_year"]]
+        .drop_duplicates()
+        .sort_values(["anthology_publication_year", "edition_id"])
+    )
+    ed_list = [int(e) for e in editions["edition_id"]]
     rows = []
 
     total_at_risk = 0
     total_reselected = 0
 
     # iterate over consecutive pairs
-    for i in range(len(editions) - 1):
-        ed_current = editions[i]
-        ed_next = editions[i + 1]
-
+    for ed_current, ed_next in zip(ed_list, ed_list[1:]):
         authors_current = set(
-            df.loc[df["anthology_edition"] == ed_current, "author_id"]
+            df.loc[df["edition_id"] == ed_current, "author_id"].dropna()
         )
-        authors_next = set(df.loc[df["anthology_edition"] == ed_next, "author_id"])
+        authors_next = set(df.loc[df["edition_id"] == ed_next, "author_id"].dropna())
 
         n_current = len(authors_current)
         reselected = len(authors_current & authors_next)
@@ -49,7 +58,7 @@ def compute_reselection_summary(df: pd.DataFrame):
 
         rows.append(
             {
-                "Edition": ed_current,
+                "Edition": EDITION_LABELS.get(ed_current, str(ed_current)),
                 "Authors": n_current,
                 "Authors reselected": reselected,
                 "Probability of reselection": round(p, 4),
@@ -68,25 +77,15 @@ def compute_reselection_summary(df: pd.DataFrame):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Compute author reselection probabilities between anthology editions."
-    )
-    parser.add_argument(
-        "input_csv",
-        help='Path to the input CSV (must include "anthology_edition" and "author_id" columns)',
-    )
-    args = parser.parse_args()
+    argparse.ArgumentParser(
+        description="Compute author reselection probabilities between AFAM editions."
+    ).parse_args()
 
-    df = pd.read_csv(args.input_csv)
+    df = query_db(query_path("works-authors-per-afam-edition"))
     summary_df, overall_p, overall_odds = compute_reselection_summary(df)
 
-    # write summary CSV
-    base = os.path.splitext(os.path.basename(args.input_csv))[0]
-    out_dir = "data"
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f"{base}_reselection_summary.csv")
-    summary_df.to_csv(out_path, index=False)
-    print(f"Summary CSV written to {out_path}")
+    summary_df.to_csv(OUT_CSV, index=False)
+    print(f"Summary CSV written to {OUT_CSV}")
 
     # print overall stats
     print(f"Overall probability of reselection across all editions: {overall_p:.4f}")

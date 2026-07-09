@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -31,10 +32,12 @@ import numpy as np
 import pandas as pd
 from scipy.stats import linregress, spearmanr
 
-from afam import DATA_DIR
-from afam.viz_style import OUTPUT_DIR
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "analysis" / "predictability"))
 
-DEFAULT_CSV_DIR = DATA_DIR
+from predictability_over_time import compute_per_edition  # noqa: E402
+
+from afam.viz_style import OUTPUT_DIR  # noqa: E402
 
 POINT_COLOR = "#111111"
 TREND_COLOR = "#c0392b"
@@ -202,12 +205,6 @@ def main() -> None:
         help="Use slot-weighted (count) or page-weighted shares (default: slot).",
     )
     parser.add_argument(
-        "--csv-dir",
-        type=Path,
-        default=DEFAULT_CSV_DIR,
-        help=f"Where to read the predictability CSVs (default: {DEFAULT_CSV_DIR})",
-    )
-    parser.add_argument(
         "--out",
         type=Path,
         default=None,
@@ -217,8 +214,8 @@ def main() -> None:
 
     out_path = args.out or (OUTPUT_DIR / WEIGHT_LABELS[args.weight]["default_out"])
 
-    authors = pd.read_csv(args.csv_dir / "predictability_over_time_authors.csv")
-    works = pd.read_csv(args.csv_dir / "predictability_over_time_works.csv")
+    authors = compute_per_edition("authors")
+    works = compute_per_edition("works")
     fig = build_figure(authors, works, args.weight)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=200, bbox_inches="tight")

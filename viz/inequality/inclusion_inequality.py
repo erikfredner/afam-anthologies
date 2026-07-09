@@ -12,7 +12,6 @@ Two variants are produced:
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -20,59 +19,26 @@ import numpy as np
 import pandas as pd
 
 
-from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
-WORKS_FILE = DATA_DIR / "2026-03-13 works per afam anthology.csv"
-AUTHORS_FILE = DATA_DIR / "2026-03-13 author ids in afam anthologies.csv"
 OUT_FILE = OUTPUT_DIR / "inclusion_inequality.png"
 OUT_FILE_ROOT = OUTPUT_DIR / "inclusion_inequality_root.png"
 
-# ── Edition-key logic (mirrors heatmap / decay scripts) ──────────────────────
+
+# ── Data loading ──────────────────────────────────────────────────────────────
 
 
-def _strip_volume(title: str) -> str:
-    return re.sub(r",?\s+[Vv]ol\.?\s+\d+\s*$", "", title).strip()
+def load_selections() -> pd.DataFrame:
+    """Wide (work × author × edition) frame from the DB.
 
-
-def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
-    meta_rows: list[dict] = []
-    for _, r in (
-        df[["anthology_id", "anthology_title", "series", "edition_number", "volume"]]
-        .drop_duplicates()
-        .iterrows()
-    ):
-        series = r["series"].strip()
-        edition = r["edition_number"].strip()
-        volume = r["volume"].strip()
-        title = r["anthology_title"].strip()
-        aid = r["anthology_id"]
-
-        if series:
-            key = f"{series}|{edition}"
-        elif volume:
-            key = f"{_strip_volume(title)}|{edition}"
-        else:
-            key = aid
-
-        meta_rows.append({"anthology_id": aid, "edition_key": key})
-
-    return df.merge(pd.DataFrame(meta_rows), on="anthology_id")
-
-
-def load_works() -> pd.DataFrame:
+    Adds `edition_key` = `edition_id` (the DB edition is already volume-collapsed)
+    so edition_counts can count unique editions per item.
     """
-    Load the works-per-anthology file, renaming columns to match the names
-    expected by assign_edition_key.
-    """
-    df = pd.read_csv(WORKS_FILE, dtype=str, na_filter=False)
-    return df.rename(
-        columns={
-            "anthology_series": "series",
-            "anthology_edition": "edition_number",
-            "anthology_volume": "volume",
-        }
-    )
+    raw = query_db(query_path("works-authors-per-afam-edition")).copy()
+    raw["edition_key"] = raw["edition_id"]
+    return raw
 
 
 def edition_counts(df: pd.DataFrame, id_col: str) -> np.ndarray:
@@ -171,10 +137,9 @@ def plot(
 
 
 def main() -> None:
-    works_df = assign_edition_key(load_works())
-    authors_df = assign_edition_key(
-        pd.read_csv(AUTHORS_FILE, dtype=str, na_filter=False)
-    )
+    raw = load_selections()
+    works_df = raw.drop_duplicates(["work_id", "edition_id"])
+    authors_df = raw.dropna(subset=["author_id"])
 
     author_counts = edition_counts(authors_df, "author_id")
 
@@ -190,7 +155,7 @@ def main() -> None:
     )
 
     # Root works only (exclude excerpts / selections)
-    root_works_df = works_df[works_df["parent_work_id"] == ""]
+    root_works_df = works_df[works_df["parent_id"].isna()]
     root_work_counts = edition_counts(root_works_df, "work_id")
     plot(
         root_work_counts,

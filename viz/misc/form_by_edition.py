@@ -2,37 +2,62 @@
 """
 form_by_edition.py
 
-Reads an input CSV of works with their literary form and edition, then:
+Reads works with their literary form and edition from the live database, then:
 
 1. Computes, for each edition:
      - number of works per literary form
      - proportion of works per form
-   and writes this table to `data/<input_basename>_form_summary.csv`.
+   and writes this table to `data/form_by_edition_summary.csv`.
 
 2. Creates a stacked‐bar chart showing the percentage distribution of forms
-   across editions and saves it to `viz/<input_basename>_form_distribution.png`.
+   across editions and saves it to `output/form_by_edition_distribution.png`.
 
-Sample CLI usage:
-    python form_by_edition.py path/to/input.csv
+Usage:
+    uv run python viz/misc/form_by_edition.py
 """
 
-import os
 import argparse
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
 from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.editions import EDITION_LABELS
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
 
-def load_and_clean(path):
-    df = pd.read_csv(path, dtype=str)
-    # normalize empty or missing forms
-    df["literary_form"] = df["literary_form"].fillna("Unknown")
-    df.loc[df["literary_form"].str.strip() == "", "literary_form"] = "Unknown"
-    df["anthology_edition"] = df["anthology_edition"].astype(int)
-    # ensure each work only counted once per edition
-    return df.drop_duplicates(subset=["work_id", "anthology_edition"])
+def load_from_db() -> pd.DataFrame:
+    """One row per (work, edition) over AFAM editions, with the work's literary
+    form. Multi-form works collapse to the lowest form_id (work-forms-afam.sql);
+    excerpts inherit their parent work's form. Each edition is labelled
+    "<year> <name>" so chronological order falls out of sort_index()."""
+    wide = query_db(query_path("works-authors-per-afam-edition"))
+    forms = query_db(query_path("work-forms-afam"))
+    form_map = dict(zip(forms["work_id"].astype(int), forms["form_name"]))
+
+    base = (
+        wide[["work_id", "parent_id", "edition_id", "anthology_publication_year"]]
+        .drop_duplicates(["work_id", "edition_id"])
+        .copy()
+    )
+
+    def resolve_form(row) -> str:
+        wid = int(row["work_id"])
+        if wid in form_map:
+            return form_map[wid]
+        pid = row["parent_id"]
+        if pd.notna(pid) and int(pid) in form_map:
+            return form_map[int(pid)]
+        return "Unknown"
+
+    base["literary_form"] = base.apply(resolve_form, axis=1)
+    base["anthology_edition"] = [
+        f"{int(y)} {EDITION_LABELS.get(int(e), e)}"
+        for e, y in zip(base["edition_id"], base["anthology_publication_year"])
+    ]
+    return base[["work_id", "anthology_edition", "literary_form"]]
 
 
 def compute_counts(df):
@@ -85,25 +110,19 @@ def plot_distribution(props, out_png):
 
 
 def main():
-    p = argparse.ArgumentParser(
+    argparse.ArgumentParser(
         description="Compute and plot literary‐form breakdown by edition."
-    )
-    p.add_argument(
-        "input_csv", help="CSV with work_id, literary_form, anthology_edition columns"
-    )
-    args = p.parse_args()
+    ).parse_args()
 
-    df = load_and_clean(args.input_csv)
+    df = load_from_db()
     counts = compute_counts(df)
     props = compute_proportions(counts)
 
-    base = os.path.splitext(os.path.basename(args.input_csv))[0]
-
-    summary_csv = DATA_DIR / f"{base}_form_summary.csv"
+    summary_csv = DATA_DIR / "form_by_edition_summary.csv"
     write_summary(counts, props, summary_csv)
     print(f"Form summary written to {summary_csv}")
 
-    plot_png = OUTPUT_DIR / f"{base}_form_distribution.png"
+    plot_png = OUTPUT_DIR / "form_by_edition_distribution.png"
     plot_distribution(props, plot_png)
     print(f"Form distribution plot saved to {plot_png}")
 

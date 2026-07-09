@@ -10,9 +10,10 @@ import pandas as pd
 
 
 from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
-DEFAULT_INPUT = DATA_DIR / "2026-03-13 works per afam anthology.csv"
 DEFAULT_OUT_PNG = OUTPUT_DIR / "canonical_author_map.png"
 DEFAULT_OUT_CSV = DATA_DIR / "canonical_author_metrics.csv"
 TARGET_LABEL_AUTHORS = [
@@ -341,14 +342,32 @@ def make_plot(
     plt.close(fig)
 
 
+def load_data() -> pd.DataFrame:
+    """Wide (work × author × edition) frame from the DB, shaped to the legacy
+    CSV columns the helpers consume (edition collapses to edition_id; each row
+    is already a single author, so author_ids/author_names hold one value)."""
+    raw = query_db(query_path("works-authors-per-afam-edition"))
+    raw = raw.dropna(subset=["author_id"]).copy()
+    return pd.DataFrame(
+        {
+            "anthology_id": raw["edition_id"].astype(int).astype(str),
+            "series_id": "",
+            "anthology_edition": "",
+            "work_id": raw["work_id"].astype(int).astype(str),
+            "work_title": raw["work_title"].fillna(""),
+            "parent_work_id": raw["parent_id"].apply(
+                lambda v: "" if pd.isna(v) else str(int(v))
+            ),
+            "parent_work_title": raw["parent_work_title"].fillna(""),
+            "author_ids": raw["author_id"].astype(int).astype(str),
+            "author_names": raw["author_name"].fillna(""),
+        }
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Plot signature-work concentration within authors."
-    )
-    parser.add_argument(
-        "--input-csv",
-        default=str(DEFAULT_INPUT),
-        help="Path to works-per-anthology CSV.",
     )
     parser.add_argument(
         "--out-png",
@@ -365,7 +384,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    df = pd.read_csv(args.input_csv, dtype=str, na_filter=False)
+    df = load_data()
     selection_df = build_selection_frame(df)
     metrics_df = compute_author_metrics(selection_df)
     exemplars_df = choose_exemplars(metrics_df)

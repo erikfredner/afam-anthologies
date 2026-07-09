@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from matplotlib.ticker import MaxNLocator
 
-from afam import DATA_DIR
+from afam.db import query as query_db
+from afam.sql import query_path
 from afam.viz_style import OUTPUT_DIR
 
 try:
@@ -13,31 +14,16 @@ except ImportError:
 
 
 def load_data() -> pd.DataFrame:
-    """Load author-work-form data and prepare edition keys."""
-    csv_path = DATA_DIR / "202505131423 author work form.csv"
-    df = pd.read_csv(csv_path, dtype=str, na_filter=False)
-    # filter out authorless rows
-    df = df[df["work_author"].str.strip() != ""]
-    # Convert year to integer
-    df["anthology_year"] = df["anthology_year"].astype(int)
-    # Ensure parent_work_id exists
-    if "parent_work_id" not in df.columns:
-        df["parent_work_id"] = ""
-    # Build unique anthology edition key
-    # Use series_id + edition when series_id is present, else anthology_id
-    if "series_id" not in df.columns:
-        df["series_id"] = ""
-    if "anthology_edition" not in df.columns:
-        df["anthology_edition"] = ""
-    if "anthology_id" not in df.columns:
-        df["anthology_id"] = ""
-    df["edition_key"] = df.apply(
-        lambda row: (
-            f"{row['series_id']}_{row['anthology_edition']}"
-            if row["series_id"]
-            else row["anthology_id"]
-        ),
-        axis=1,
+    """Load author × work × form × edition rows from the live DB, shaped to the
+    columns the stats builder consumes (work_author, work_id, edition_key,
+    work_form, parent_work_id). edition_key = edition_id."""
+    df = query_db(query_path("author-page-share-reselection"))
+    df = df.dropna(subset=["author_id"]).copy()
+    df["work_author"] = df["author_name"]
+    df["edition_key"] = df["edition_id"]
+    df["work_form"] = df["form_name"].fillna("Unknown")
+    df["parent_work_id"] = df["parent_id"].apply(
+        lambda v: "" if pd.isna(v) else str(int(v))
     )
     return df
 
@@ -89,7 +75,7 @@ def make_plot(
     # Create figure with specified size and resolution
     fig, ax = plt.subplots(figsize=(10, 6), dpi=600)
     # -------- Scatter ------------
-    points = ax.scatter(
+    ax.scatter(
         x,
         y,
         s=sizes,
