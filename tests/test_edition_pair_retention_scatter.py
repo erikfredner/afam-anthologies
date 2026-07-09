@@ -14,8 +14,8 @@ from author_vs_work_debut_reselection import (  # noqa: E402
     build_edition_table,
 )
 from edition_pair_retention_scatter import (  # noqa: E402
+    callout_pair_index,
     compute_pair_retention,
-    nearest_pair_index,
 )
 
 
@@ -110,13 +110,87 @@ def test_same_series_and_year_gap_flags(pairs: pd.DataFrame):
     assert indexed.loc[(1, 3), "year_gap"] == 10
 
 
-def test_nearest_pair_index_picks_closest_point(pairs: pd.DataFrame):
-    # Pair (1, 2) sits at (0.5, 0.5); pairs (1, 3) and (2, 3) sit at (0.0, 0.5).
-    near_corner = pairs.loc[nearest_pair_index(pairs, (1.0, 1.0))]
-    assert (near_corner["earlier_edition_id"], near_corner["later_edition_id"]) == (
-        1,
-        2,
-    )
+def test_callout_pair_index_matches_requested_direction(pairs: pd.DataFrame):
+    idx = callout_pair_index(pairs, (1, 2))
+    row = pairs.loc[idx]
+    assert (row["earlier_edition_id"], row["later_edition_id"]) == (1, 2)
 
-    near_origin = pairs.loc[nearest_pair_index(pairs, (0.0, 0.0))]
-    assert near_origin["work_retention"] == pytest.approx(0.0)
+
+def test_callout_pair_index_falls_back_to_reverse_direction(pairs: pd.DataFrame):
+    # Only (1, 2) exists, not (2, 1); the lookup should still find it.
+    idx = callout_pair_index(pairs, (2, 1))
+    row = pairs.loc[idx]
+    assert (row["earlier_edition_id"], row["later_edition_id"]) == (1, 2)
+
+
+def test_callout_pair_index_raises_for_missing_pair(pairs: pd.DataFrame):
+    with pytest.raises(ValueError):
+        callout_pair_index(pairs, (1, 99))
+
+
+def test_all_distinct_years_have_no_same_year_rows(pairs: pd.DataFrame):
+    assert not pairs["same_year"].any()
+
+
+@pytest.fixture
+def same_year_pairs() -> pd.DataFrame:
+    raw, editions = make_raw(
+        [
+            {
+                "work_id": "w1",
+                "author_id": "a1",
+                "edition_id": 10,
+                "anthology_publication_year": 1968,
+                "series_id": 1,
+            },
+            {
+                "work_id": "w2",
+                "author_id": "a2",
+                "edition_id": 10,
+                "anthology_publication_year": 1968,
+                "series_id": 1,
+            },
+            {
+                "work_id": "w1",
+                "author_id": "a1",
+                "edition_id": 11,
+                "anthology_publication_year": 1968,
+                "series_id": 2,
+            },
+            {
+                "work_id": "w3",
+                "author_id": "a3",
+                "edition_id": 11,
+                "anthology_publication_year": 1968,
+                "series_id": 2,
+            },
+            {
+                "work_id": "w4",
+                "author_id": "a4",
+                "edition_id": 11,
+                "anthology_publication_year": 1968,
+                "series_id": 2,
+            },
+        ]
+    )
+    return compute_pair_retention(raw, editions)
+
+
+def test_same_year_pair_emits_both_permutations(same_year_pairs: pd.DataFrame):
+    assert len(same_year_pairs) == 2
+    assert same_year_pairs["same_year"].all()
+
+    indexed = same_year_pairs.set_index(["earlier_edition_id", "later_edition_id"])
+
+    # Edition 10 as "earlier": w1 of {w1, w2} returns (0.5); a1 of {a1, a2}
+    # returns (0.5).
+    assert indexed.loc[(10, 11), "work_retention"] == pytest.approx(0.5)
+    assert indexed.loc[(10, 11), "author_retention"] == pytest.approx(0.5)
+    assert indexed.loc[(10, 11), "year_gap"] == 0
+
+    # Edition 11 as "earlier": w1 of {w1, w3, w4} returns (1/3); a1 of
+    # {a1, a3, a4} returns (1/3) — a different value than the reverse
+    # direction, confirming both permutations are independently normalized.
+    assert indexed.loc[(11, 10), "work_retention"] == pytest.approx(1 / 3)
+    assert indexed.loc[(11, 10), "author_retention"] == pytest.approx(1 / 3)
+    assert indexed.loc[(11, 10), "year_gap"] == 0
