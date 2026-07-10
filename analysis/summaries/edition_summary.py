@@ -27,33 +27,49 @@ OUT_CSV = DATA_DIR / "edition_summary.csv"
 
 
 def compute_edition_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """`df` is the wide (work × author × edition) frame."""
+    """`df` is the wide (work × author × edition) frame.
+
+    Several AFAM editions share a publication year (e.g. three in 1968, four in
+    1971) with no genuine editorial "earlier -> later" relationship among
+    themselves. Comparing against only the immediately-preceding row in an
+    edition_id-broken sort would (a) compare same-year siblings against each
+    other as if one preceded the other, and (b) compare the edition following a
+    same-year cluster against just one arbitrary cluster member instead of the
+    cluster's full prior selections. Each edition is instead compared against
+    the union of works from the previous *distinct year*'s edition(s).
+    """
     editions = (
         df[["edition_id", "anthology_publication_year"]]
         .drop_duplicates()
         .sort_values(["anthology_publication_year", "edition_id"])
     )
+    edition_works = {
+        int(eid): set(grp["work_id"]) for eid, grp in df.groupby("edition_id")
+    }
 
     summary_rows = []
-    prev_ids: set = set()
-    for _, ed in editions.iterrows():
-        eid = int(ed["edition_id"])
-        current_ids = set(df.loc[df["edition_id"] == eid, "work_id"])
-        total = len(current_ids)
-        reselected = len(current_ids & prev_ids)
-        pct = (reselected / total * 100) if total else 0.0
+    prev_year_ids: set = set()
+    for year, year_editions in editions.groupby("anthology_publication_year"):
+        for eid in year_editions["edition_id"]:
+            eid = int(eid)
+            current_ids = edition_works.get(eid, set())
+            total = len(current_ids)
+            reselected = len(current_ids & prev_year_ids)
+            pct = (reselected / total * 100) if total else 0.0
 
-        summary_rows.append(
-            {
-                "edition_id": eid,
-                "Edition": EDITION_LABELS.get(eid, str(eid)),
-                "Year": int(ed["anthology_publication_year"]),
-                "Works": total,
-                "Works reselected": reselected,
-                "Works reselected %": round(pct, 2),
-            }
+            summary_rows.append(
+                {
+                    "edition_id": eid,
+                    "Edition": EDITION_LABELS.get(eid, str(eid)),
+                    "Year": int(year),
+                    "Works": total,
+                    "Works reselected": reselected,
+                    "Works reselected %": round(pct, 2),
+                }
+            )
+        prev_year_ids = set().union(
+            *(edition_works.get(int(eid), set()) for eid in year_editions["edition_id"])
         )
-        prev_ids = current_ids
 
     return pd.DataFrame(summary_rows)
 

@@ -1,7 +1,7 @@
 """retention_from_1929.py
 -----------------------
 Bar chart showing how much of the 1929 "Anthology of American Negro Literature"
-(anthology_id=67) was retained — by author and by work — in each subsequent anthology.
+(edition_id=72) was retained — by author and by work — in each subsequent anthology.
 
 Figure: viz/retention_from_1929.png
 

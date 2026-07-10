@@ -55,20 +55,6 @@ def _stringify_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return result
 
 
-def assign_edition_key(df: pd.DataFrame) -> pd.DataFrame:
-    """Collapse rows to anthology editions using series_id when available."""
-    result = _stringify_columns(df, ["series_id", "anthology_edition", "anthology_id"])
-    result["edition_key"] = result.apply(
-        lambda row: (
-            f"{row['series_id']}|{row['anthology_edition']}"
-            if row["series_id"].strip()
-            else row["anthology_id"]
-        ),
-        axis=1,
-    )
-    return result
-
-
 def assign_canonical_work(df: pd.DataFrame) -> pd.DataFrame:
     """Resolve each row to its top-level parent work when parent data exists."""
     result = _stringify_columns(
@@ -125,43 +111,16 @@ def assign_canonical_work(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def explode_authors(df: pd.DataFrame) -> pd.DataFrame:
-    """Expand one row per listed author and drop rows with no usable author."""
-    df = _stringify_columns(df, ["author_ids", "author_names"])
-    records: list[dict] = []
-    for row in df.to_dict("records"):
-        author_ids = [
-            part.strip() for part in row["author_ids"].split(",") if part.strip()
-        ]
-        author_names = [
-            part.strip() for part in row["author_names"].split(";") if part.strip()
-        ]
-        pairs: list[tuple[str, str]] = []
-
-        if author_ids and author_names and len(author_ids) == len(author_names):
-            pairs = list(zip(author_ids, author_names))
-        elif len(author_ids) == 1 or len(author_names) == 1:
-            pairs = [
-                (
-                    author_ids[0] if author_ids else "",
-                    author_names[0] if author_names else "",
-                )
-            ]
-
-        for author_id, author_name in pairs:
-            if not author_id and not author_name:
-                continue
-            record = dict(row)
-            record["author_id"] = author_id
-            record["author_name"] = author_name
-            records.append(record)
-
-    return pd.DataFrame.from_records(records)
-
-
 def build_selection_frame(df: pd.DataFrame) -> pd.DataFrame:
-    """Create unique author-edition-work selection events."""
-    expanded = explode_authors(assign_canonical_work(assign_edition_key(df)))
+    """Create unique author-edition-work selection events.
+
+    `df` must already carry one row per (author, edition, work) with scalar
+    `author_id`/`author_name`/`edition_key` columns -- the DB source
+    (works-authors-per-afam-edition.sql) is one row per (work, author), so
+    co-authored works are preserved via multiple rows rather than needing to
+    be exploded out of a single delimited field.
+    """
+    expanded = assign_canonical_work(df)
     selection_cols = [
         "author_id",
         "author_name",
@@ -343,24 +302,28 @@ def make_plot(
 
 
 def load_data() -> pd.DataFrame:
-    """Wide (work × author × edition) frame from the DB, shaped to the legacy
-    CSV columns the helpers consume (edition collapses to edition_id; each row
-    is already a single author, so author_ids/author_names hold one value)."""
+    """Wide (work × author × edition) frame from the DB.
+
+    The DB is already volume-collapsed to one edition_id per edition, so
+    edition_id doubles as the edition_key directly -- no series_id/edition-
+    number reconstruction is needed. Each row is already exactly one
+    (work, author, edition) triple (works-authors-per-afam-edition.sql
+    produces one row per author), so co-authored works are preserved as
+    multiple rows rather than a delimited field to explode.
+    """
     raw = query_db(query_path("works-authors-per-afam-edition"))
     raw = raw.dropna(subset=["author_id"]).copy()
     return pd.DataFrame(
         {
-            "anthology_id": raw["edition_id"].astype(int).astype(str),
-            "series_id": "",
-            "anthology_edition": "",
+            "edition_key": raw["edition_id"].astype(int).astype(str),
             "work_id": raw["work_id"].astype(int).astype(str),
             "work_title": raw["work_title"].fillna(""),
             "parent_work_id": raw["parent_id"].apply(
                 lambda v: "" if pd.isna(v) else str(int(v))
             ),
             "parent_work_title": raw["parent_work_title"].fillna(""),
-            "author_ids": raw["author_id"].astype(int).astype(str),
-            "author_names": raw["author_name"].fillna(""),
+            "author_id": raw["author_id"].astype(int).astype(str),
+            "author_name": raw["author_name"].fillna(""),
         }
     )
 

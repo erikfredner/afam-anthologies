@@ -24,15 +24,19 @@ from afam.sql import query_path
 
 def compute_never_cut_stats(df: pd.DataFrame):
     """`df` is the wide (work × author × edition) frame. Editions are positioned
-    chronologically by year (ties broken by edition_id)."""
-    editions = (
-        df[["edition_id", "anthology_publication_year"]]
-        .drop_duplicates()
-        .sort_values(["anthology_publication_year", "edition_id"])
-        .reset_index(drop=True)
-    )
-    position = {int(e): i for i, e in enumerate(editions["edition_id"])}
-    max_position = len(editions) - 1
+    chronologically by year; editions sharing a year (e.g. three in 1968, four
+    in 1971) have no genuine editorial order among themselves, so they collapse
+    to a single rank instead of each getting its own position via an arbitrary
+    edition_id tiebreak -- otherwise an author present in every year except one
+    same-year sibling would show a spurious "gap" and be misclassified as cut."""
+    editions = df[["edition_id", "anthology_publication_year"]].drop_duplicates()
+    years = sorted(editions["anthology_publication_year"].unique())
+    year_rank = {int(y): i for i, y in enumerate(years)}
+    edition_rank = {
+        int(row["edition_id"]): year_rank[int(row["anthology_publication_year"])]
+        for _, row in editions.iterrows()
+    }
+    max_rank = len(years) - 1
 
     author_groups = (
         df.dropna(subset=["author_id"]).groupby("author_id")["edition_id"].unique()
@@ -41,14 +45,14 @@ def compute_never_cut_stats(df: pd.DataFrame):
     at_risk = 0
     never_cut = 0
     for eds in author_groups:
-        positions = sorted({position[int(e)] for e in eds})
-        min_pos = positions[0]
-        # only authors who have at least one subsequent edition
-        if min_pos < max_position:
+        ranks = sorted({edition_rank[int(e)] for e in eds})
+        min_rank = ranks[0]
+        # only authors who have at least one subsequent edition (year)
+        if min_rank < max_rank:
             at_risk += 1
-            # require presence in every edition from debut through the final
-            expected_count = max_position - min_pos + 1
-            if positions[-1] == max_position and len(positions) == expected_count:
+            # require presence in every year-rank from debut through the final
+            expected_count = max_rank - min_rank + 1
+            if ranks[-1] == max_rank and len(ranks) == expected_count:
                 never_cut += 1
 
     # compute probability, odds, and standard error

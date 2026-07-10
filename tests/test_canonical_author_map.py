@@ -9,7 +9,6 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent / "viz" / "misc"))
 
 from canonical_author_map import (  # noqa: E402
-    assign_edition_key,
     assign_canonical_work,
     build_selection_frame,
     build_label_text,
@@ -25,14 +24,9 @@ def make_df(rows: list[dict]) -> pd.DataFrame:
         "work_title": "",
         "parent_work_id": "",
         "parent_work_title": "",
-        "author_ids": "",
-        "author_names": "",
-        "anthology_id": "",
-        "anthology_title": "",
-        "series_id": "",
-        "anthology_edition": "",
-        "anthology_volume": "",
-        "anthology_publication_year": "",
+        "author_id": "",
+        "author_name": "",
+        "edition_key": "",
     }
     df = pd.DataFrame(rows)
     for col, value in defaults.items():
@@ -41,30 +35,26 @@ def make_df(rows: list[dict]) -> pd.DataFrame:
     return df.astype(str)
 
 
-def test_assign_edition_key_collapses_series_editions():
-    df = make_df(
-        [
-            {"anthology_id": "52", "series_id": "8", "anthology_edition": "1"},
-            {"anthology_id": "53", "series_id": "8", "anthology_edition": "1"},
-            {"anthology_id": "67", "series_id": "", "anthology_edition": ""},
-        ]
-    )
-
-    result = assign_edition_key(df)
-
-    assert list(result["edition_key"]) == ["8|1", "8|1", "67"]
-
-
-def test_build_selection_frame_explodes_multi_author_rows():
+def test_build_selection_frame_preserves_multiple_authors_per_work():
+    """The DB source is one row per (work, author); co-authored works arrive
+    as multiple rows rather than a delimited field, and build_selection_frame
+    must keep all of them rather than collapsing to one author."""
     df = make_df(
         [
             {
                 "work_id": "w1",
                 "work_title": "Joint Text",
-                "author_ids": "1, 2",
-                "author_names": "Author One; Author Two",
-                "anthology_id": "a1",
-            }
+                "author_id": "1",
+                "author_name": "Author One",
+                "edition_key": "a1",
+            },
+            {
+                "work_id": "w1",
+                "work_title": "Joint Text",
+                "author_id": "2",
+                "author_name": "Author Two",
+                "edition_key": "a1",
+            },
         ]
     )
 
@@ -80,20 +70,16 @@ def test_build_selection_frame_deduplicates_identical_author_edition_work():
             {
                 "work_id": "w1",
                 "work_title": "Text",
-                "author_ids": "1",
-                "author_names": "Author One",
-                "anthology_id": "a1",
-                "series_id": "8",
-                "anthology_edition": "1",
+                "author_id": "1",
+                "author_name": "Author One",
+                "edition_key": "8|1",
             },
             {
                 "work_id": "w1",
                 "work_title": "Text",
-                "author_ids": "1",
-                "author_names": "Author One",
-                "anthology_id": "a2",
-                "series_id": "8",
-                "anthology_edition": "1",
+                "author_id": "1",
+                "author_name": "Author One",
+                "edition_key": "8|1",
             },
         ]
     )
@@ -109,24 +95,24 @@ def test_assign_canonical_work_rolls_child_to_top_level_parent():
             {
                 "work_id": "root",
                 "work_title": "Long Book",
-                "author_ids": "1",
-                "author_names": "Author One",
+                "author_id": "1",
+                "author_name": "Author One",
             },
             {
                 "work_id": "chapter",
                 "work_title": "Chapter I",
                 "parent_work_id": "root",
                 "parent_work_title": "Long Book",
-                "author_ids": "1",
-                "author_names": "Author One",
+                "author_id": "1",
+                "author_name": "Author One",
             },
             {
                 "work_id": "excerpt",
                 "work_title": "Excerpt from Chapter I",
                 "parent_work_id": "chapter",
                 "parent_work_title": "Chapter I",
-                "author_ids": "1",
-                "author_names": "Author One",
+                "author_id": "1",
+                "author_name": "Author One",
             },
         ]
     )
@@ -189,18 +175,18 @@ def test_parent_work_rule_aggregates_excerpt_variants():
                 "work_title": "Chapter I",
                 "parent_work_id": "p1",
                 "parent_work_title": "Long Book",
-                "author_ids": "1",
-                "author_names": "Author One",
-                "anthology_id": "a1",
+                "author_id": "1",
+                "author_name": "Author One",
+                "edition_key": "a1",
             },
             {
                 "work_id": "w2",
                 "work_title": "Chapter II",
                 "parent_work_id": "p1",
                 "parent_work_title": "Long Book",
-                "author_ids": "1",
-                "author_names": "Author One",
-                "anthology_id": "a2",
+                "author_id": "1",
+                "author_name": "Author One",
+                "edition_key": "a2",
             },
         ]
     )
@@ -317,25 +303,23 @@ def test_smoke_writes_metrics_csv_and_png(tmp_path: Path):
             {
                 "work_id": "w1",
                 "work_title": "Work A",
-                "author_ids": "1",
-                "author_names": "Author One",
-                "anthology_id": "a1",
-                "series_id": "10",
-                "anthology_edition": "1",
+                "author_id": "1",
+                "author_name": "Author One",
+                "edition_key": "a1",
             },
             {
                 "work_id": "w2",
                 "work_title": "Work B",
-                "author_ids": "1",
-                "author_names": "Author One",
-                "anthology_id": "a2",
+                "author_id": "1",
+                "author_name": "Author One",
+                "edition_key": "a2",
             },
             {
                 "work_id": "w3",
                 "work_title": "Work C",
-                "author_ids": "2",
-                "author_names": "Author Two",
-                "anthology_id": "a3",
+                "author_id": "2",
+                "author_name": "Author Two",
+                "edition_key": "a3",
             },
         ]
     )

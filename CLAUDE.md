@@ -83,7 +83,7 @@ Scripts that print to stdout or write CSVs to `data/`.
 
 | Subfolder | Scripts | Purpose |
 |---|---|---|
-| `overlap/` | `overlap_naaal_1996`, `simulate_author_work_overlap`, `half_or_more_sentences`, `authors_in_half_or_more_afam_eds`, `works_in_half_or_more_afam_eds`, `half_or_more_summary`, `per_author_work_overlap`, `author_disagreement`, `sterling_brown_poem_overlap` | Author/work overlap counts, Monte Carlo simulations, multi-metric author-disagreement verdicts, and a single-author (Sterling Brown) pairwise poem-overlap case study |
+| `overlap/` | `simulate_author_work_overlap`, `half_or_more_sentences`, `authors_in_half_or_more_afam_eds`, `works_in_half_or_more_afam_eds`, `half_or_more_summary`, `per_author_work_overlap`, `author_disagreement`, `sterling_brown_poem_overlap` | Author/work overlap counts, Monte Carlo simulations, multi-metric author-disagreement verdicts, and a single-author (Sterling Brown) pairwise poem-overlap case study |
 | `reselection/` | `reselection_vs_chance`, `new_selection_reselection_probability`, `author_first_selection_success`, `author_vs_work_debut_reselection`, `post_debut_performance`, `authors_without_frequent_works`, `early_selection_dropouts`, `work_pool_dilution`, `reselection_hazard` | Debut reselection rates, post-debut retention, early-dropout and work-pool-dilution analyses; `reselection_hazard` is the edition-indexed discrete-time survival/hazard model (entity-edition person-period table, first-event & recurrent, cloglog/logit GLM) comparing author vs. work reselection net of exposure |
 | `concentration/` | `author_form_concentration`, `poet_work_dispersal`, `poet_signature_concentration` | Page-weighted and count-weighted per-author-per-form concentration across selected works; per-poet work-level dispersal (top-poem edition coverage vs. effective number of poems, plus an all-forms `distinct_works_all_forms` count — e.g. Hughes 141 vs McKay 58); `poet_signature_concentration` ranks the inverse — poets whose selection collapses onto one signature poem (high selection volume + few distinct poems + dominant top-poem coverage) |
 | `vernacular/` | `vernacular_works` | Resolve editor-designated vernacular page ranges into the works they contain; per-edition share of selections and pages that are vernacular |
@@ -91,6 +91,7 @@ Scripts that print to stdout or write CSVs to `data/`.
 | `influence/` | `anthology_influence` | Per-edition influence on subsequent editions: forward pickup rate of each edition's selections (all and debuts-only) vs. corpus baseline |
 | `gender/` | `women_author_gaps`, `author_gender_summary`, `gender_work_consistency` | Gender-gap analyses; `gender_work_consistency` tests whether work-selection consistency (Jaccard of an author's work sets across editions, within literary form) differs by gender |
 | `summaries/` | `works_without_authors_naal_naaal`, `edition_stats`, `edition_summary`, `format_author_anthology_counts`, `format_work_anthology_counts`, `author_never_cut`, `compare_series_authors`, `naal_exclusive_authors`, `naal_exclusive_works`, `list_reselected_works` | Counts, formatted tables, exclusivity lists |
+| `robustness/` | `edge_case_sensitivity` | Sensitivity check for the three anthologies excluded from the AFAM corpus as non-comparable edge cases (*Black Culture* 1972 id=79, *Crossing the Danger Water* 1993 id=62, *African American Literature* series ed.1 1993 id=22 — none has a `data_edition_literary_traditions` row); widens the AFAM tag filter in-memory via a `UNION` (no DB writes) to re-run the four headline author-vs-work claims (never-repeated debut share, ≥half-of-anthologies selection counts, debut reselection-rate comparison, paired edition retention) with vs. without these editions |
 
 ## `viz/` — figure-producing scripts
 
@@ -115,7 +116,7 @@ Pytest unit tests for helpers inside analysis/viz scripts. They `sys.path.insert
 
 SQL files executed by DB-backed scripts via `afam.sql.query_path(name)` (name is the file's stem; the `.sql` suffix is optional).
 
-The workhorse replacement for the legacy "works per afam anthology" CSV dump is `works-authors-per-afam-edition.sql` — one row per (work, author) over AFAM-tagged editions, carrying work/parent titles, edition year/series/number, and author name + birth year. Other shared queries added for the CSV→DB migration: `edition-author-work-totals-afam.sql` (per-edition author/work totals) and `naal-american-authors-works.sql` (Norton American series_id 1 + 3, not AFAM-restricted, for the NAAL-exclusivity / series-comparison scripts).
+The workhorse replacement for the legacy "works per afam anthology" CSV dump is `works-authors-per-afam-edition.sql` — one row per (work, author) over AFAM-tagged editions, carrying work/parent titles, edition year/series/number, and author name + birth year. Another shared query added for the CSV→DB migration: `naal-american-authors-works.sql` (Norton American series_id 1 + 3, not AFAM-restricted, for the NAAL-exclusivity / series-comparison scripts).
 
 ## Database schema
 

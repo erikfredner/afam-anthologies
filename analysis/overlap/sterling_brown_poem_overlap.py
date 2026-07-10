@@ -49,48 +49,10 @@ from statistics import mean, median
 import pandas as pd
 
 from afam.db import query as query_db
+from afam.sql import query_path
 
 # Sterling Brown's author id in the `anthologies` database.
 STERLING_BROWN_ID = 477
-
-POEMS_SQL = """
-WITH afam AS (
-    SELECT DISTINCT e.id
-    FROM data_edition e
-    JOIN data_edition_literary_traditions elt ON elt.edition_id = e.id
-    JOIN data_literarytradition lt ON lt.id = elt.literarytradition_id
-    WHERE lt."name" = 'African-American Literature'
-),
-work_min_form AS (
-    SELECT work_id, MIN(form_id) AS form_id
-    FROM data_work_form
-    GROUP BY work_id
-)
-SELECT DISTINCT
-    w.id        AS work_id,
-    w.title     AS work_title,
-    w.parent_id AS parent_id,
-    e.id        AS edition_id,
-    e."year"    AS year,
-    f."name"    AS form
-FROM data_work w
-JOIN data_work_authors wa     ON wa.work_id = w.id
-JOIN data_workinanthology wia ON wia.work_id = w.id
-JOIN data_volume v            ON v.id = wia.volume_id
-JOIN data_edition e           ON e.id = v.edition_id
-JOIN afam                     ON afam.id = e.id
-LEFT JOIN work_min_form wmf    ON wmf.work_id = w.id
-LEFT JOIN data_form f          ON f.id = wmf.form_id
-WHERE wa.author_id = %(author_id)s;
-"""
-
-AFAM_EDITION_COUNT_SQL = """
-SELECT COUNT(DISTINCT e.id) AS n
-FROM data_edition e
-JOIN data_edition_literary_traditions elt ON elt.edition_id = e.id
-JOIN data_literarytradition lt ON lt.id = elt.literarytradition_id
-WHERE lt."name" = 'African-American Literature';
-"""
 
 
 def compute(df: pd.DataFrame, n_afam_editions: int) -> dict:
@@ -103,9 +65,7 @@ def compute(df: pd.DataFrame, n_afam_editions: int) -> dict:
     # Containers/sections: any work that is the parent of another of the
     # author's works. These are dropped so only leaf poems are counted.
     parents = set(df["parent_id"].dropna().astype(int))
-    poems = df[
-        (df["form"] == "poetry") & (~df["work_id"].astype(int).isin(parents))
-    ]
+    poems = df[(df["form"] == "poetry") & (~df["work_id"].astype(int).isin(parents))]
 
     edition_poems: dict[int, set[int]] = {
         int(eid): set(grp["work_id"].astype(int))
@@ -115,9 +75,7 @@ def compute(df: pd.DataFrame, n_afam_editions: int) -> dict:
     brown_sets = list(edition_poems.values())
     # Zero-filled universe: every AFAM edition, with empty sets for those that
     # select no poem by the author.
-    all_sets = brown_sets + [
-        set() for _ in range(n_afam_editions - len(brown_sets))
-    ]
+    all_sets = brown_sets + [set() for _ in range(n_afam_editions - len(brown_sets))]
 
     def stats(sets: list[set[int]]) -> dict:
         counts = [len(s) for s in sets]
@@ -158,11 +116,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    df = query_db(POEMS_SQL, {"author_id": args.author_id})
+    df = query_db(query_path("sterling-brown-poems"), {"author_id": args.author_id})
     if df.empty:
         raise SystemExit(f"No works found for author id {args.author_id}.")
 
-    n_afam_editions = int(query_db(AFAM_EDITION_COUNT_SQL).iloc[0]["n"])
+    n_afam_editions = int(query_db(query_path("afam-edition-count")).iloc[0]["n"])
     result = compute(df, n_afam_editions)
 
     print(f"Distinct Brown poems anthologized: {result['n_distinct_poems']}")

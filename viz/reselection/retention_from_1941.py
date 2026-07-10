@@ -1,6 +1,6 @@
 """retention_from_1941.py
 -----------------------
-Bar chart showing how much of the 1941 "Negro Caravan" (anthology_id=62)
+Bar chart showing how much of the 1941 "Negro Caravan" (edition_id=68)
 was retained — by author and by work — in each anthology published after 1941.
 
 Figure: viz/retention_from_1941.png

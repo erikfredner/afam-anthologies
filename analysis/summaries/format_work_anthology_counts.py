@@ -8,8 +8,6 @@ works with the same count are alphabetized by work name. Output format:
 
 import argparse
 
-import pandas as pd
-
 from afam.db import query as query_db
 from afam.sql import query_path
 
@@ -21,10 +19,11 @@ def load_counts():
     """
     counts = query_db(query_path("work-edition-counts-afam"))
     wide = query_db(query_path("works-authors-per-afam-edition"))
-    author_by_work = (
+    authors_by_work = (
         wide.dropna(subset=["author_id"])
-        .drop_duplicates("work_id")
-        .set_index("work_id")["author_name"]
+        .drop_duplicates(["work_id", "author_name"])
+        .groupby("work_id")["author_name"]
+        .apply(lambda names: " & ".join(sorted(names)))
     )
 
     records = []
@@ -32,8 +31,7 @@ def load_counts():
         count = int(row["edition_count"])
         if count < 10:
             continue
-        author = author_by_work.get(int(row["work_id"]), "")
-        author = "" if pd.isna(author) else author
+        author = authors_by_work.get(int(row["work_id"]), "")
         records.append((row["work_title"], author, count))
     return records
 
