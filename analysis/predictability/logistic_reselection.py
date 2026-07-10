@@ -7,13 +7,23 @@ For a given target edition year, models P(in_target | prior_count) using prior
 appearances in all earlier AFAM editions. Editions are counted by edition_id
 (volumes collapsed into their parent edition). Root works only by default.
 
+In addition to the baseline run, the script automatically runs a second,
+within-series-decontaminated variant that drops prior selections belonging to
+the target edition's own series (e.g. NAAAL 1 selections are not treated as
+priors for a NAAAL 2 target) before fitting/reporting. Within-series
+reselection rates behave very differently from cross-series reselection
+rates, so pooling them into one prior_count would misrepresent both. This
+variant is skipped if it would be identical to the baseline (e.g. the target
+edition's series has no earlier entries, or --exclude-prior-series already
+covers it).
+
 Usage:
     uv run python analysis/logistic_reselection.py
     uv run python analysis/logistic_reselection.py --year 1996 --mode authors
     uv run python analysis/logistic_reselection.py --year 2025 --mode both
     uv run python analysis/logistic_reselection.py --year 2025 --mode works --include-excerpts
-    # Decontaminate: drop prior NAAAL editions (series_id=3) from the features
-    uv run python analysis/logistic_reselection.py --year 2025 --mode both --exclude-prior-series 3
+    # Decontaminate further: also drop prior editions of an unrelated series
+    uv run python analysis/logistic_reselection.py --year 2025 --mode both --exclude-prior-series 17
 """
 
 from __future__ import annotations
@@ -51,6 +61,16 @@ def resolve_target_year(df: pd.DataFrame, year_arg: int | None) -> int:
     if year_arg is None:
         return int(df["anthology_publication_year"].max())
     return year_arg
+
+
+def resolve_target_series_ids(df: pd.DataFrame, target_year: int) -> set[int]:
+    """Series id(s) publishing an edition in the target year.
+
+    Used to drop within-series priors (e.g. NAAAL 1 -> NAAAL 2), since
+    within-series reselection dynamics differ from cross-series ones.
+    """
+    ids = df.loc[df["anthology_publication_year"] == target_year, "series_id"].dropna()
+    return set(int(i) for i in ids.unique())
 
 
 # ── Feature frames ────────────────────────────────────────────────────────────
@@ -295,7 +315,10 @@ def run_mode(
     }
 
 
-def print_threshold_summary(results: list[dict[str, Any]]) -> None:
+def print_threshold_summary(
+    results: list[dict[str, Any]],
+    title: str = "SUMMARY: more-likely-than-not threshold",
+) -> None:
     by_mode = {r["mode"]: r for r in results if r is not None}
     singular = {"authors": "author", "works": "work"}
 
@@ -313,7 +336,7 @@ def print_threshold_summary(results: list[dict[str, Any]]) -> None:
     authors_clause = clause("authors")
     works_clause = clause("works")
 
-    print("\n===== SUMMARY: more-likely-than-not threshold =====")
+    print(f"\n===== {title} =====")
     if authors_clause and works_clause:
         print(f"Only {authors_clause} and {works_clause}, respectively.")
     elif authors_clause:
@@ -369,14 +392,46 @@ def main() -> None:
 
     df = load_data(include_excerpts=args.include_excerpts)
     target_year = resolve_target_year(df, args.year)
-    exclude = set(args.exclude_prior_series) if args.exclude_prior_series else None
+    user_exclude = (
+        set(args.exclude_prior_series) if args.exclude_prior_series else set()
+    )
 
     modes = ["authors", "works"] if args.mode == "both" else [args.mode]
+
+    baseline_exclude = user_exclude or None
     results = [
-        run_mode(df, mode, target_year, args.out_dir, exclude_prior_series=exclude)
+        run_mode(
+            df, mode, target_year, args.out_dir, exclude_prior_series=baseline_exclude
+        )
         for mode in modes
     ]
     print_threshold_summary(results)
+
+    within_series_exclude = user_exclude | resolve_target_series_ids(df, target_year)
+    newly_excluded = within_series_exclude - user_exclude
+    prior = df[df["anthology_publication_year"] < target_year]
+    has_within_series_priors = prior["series_id"].isin(newly_excluded).any()
+    if newly_excluded and has_within_series_priors:
+        print("\n\n===== WITHIN-SERIES-DECONTAMINATED VARIANT =====")
+        print(
+            "(dropping prior selections from the target edition's own series "
+            f"{sorted(within_series_exclude - user_exclude)} — within-series "
+            "reselection differs from cross-series reselection)"
+        )
+        results_ws = [
+            run_mode(
+                df,
+                mode,
+                target_year,
+                args.out_dir,
+                exclude_prior_series=within_series_exclude,
+            )
+            for mode in modes
+        ]
+        print_threshold_summary(
+            results_ws,
+            title="SUMMARY: more-likely-than-not threshold (within-series priors excluded)",
+        )
 
 
 if __name__ == "__main__":
