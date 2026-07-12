@@ -280,15 +280,29 @@ def test_phantom_picks_never_shared_across_editions():
     assert sims[0].work_ids & sims[1].work_ids <= {"w1", "w2"}
 
 
-def test_lambda_with_alpha_raises():
+def test_lambda_with_alpha_uses_an_inflated_ranked_pool():
     eligible = [("a1", ["w1", "w2"])]
+    ranks = draw_author_corpus_ranks(
+        {"a1": {"w1", "w2"}},
+        np.random.default_rng(0),
+        "frequency",
+        {"w1": 2, "w2": 1},
+        lam=1.0,
+    )
     target = EditionTarget(
         per_author_work_counts=[1], authored_work_count=1, authorless_work_count=0
     )
-    with pytest.raises(ValueError):
-        sample_edition_author_first(
-            target, eligible, None, 1.0, [], np.random.default_rng(0), lam=1.0
-        )
+    sim = sample_edition_author_first(
+        target,
+        eligible,
+        ranks,
+        1.0,
+        [],
+        np.random.default_rng(0),
+        lam=1.0,
+        phantom_scope="shared",
+    )
+    assert len(sim.author_work_ids["a1"]) == 1
 
 
 # ── Decoupled allocation ──────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 ---
-title: "Is author-over-work consensus just pool size? A simulation test"
-subtitle: "Generative models of anthology selection, run against the AFAM corpus and synthetic pools"
-date: 2026-07-11
+title: "Do anthology editors agree about authors, or about works?"
+subtitle: "A generative stress test of selection in 26 African American literature anthologies, 1929–2025"
+date: 2026-07-12
 format:
   pdf:
     toc: false
@@ -12,299 +12,278 @@ format:
 
 # Summary {.unnumbered}
 
-A recurring objection to our finding that anthology editors agree more about
-*authors* than about *works* is that this may be arithmetic rather than
-criticism: with roughly 600 authors and 2,700 works in the corpus, two editors
-choosing at random are simply likelier to land on the same author than the
-same work. To test this, we replay the corpus's 26 anthologies under competing
-selection processes — editors who pick authors, editors who carry a fixed
-*canon* of must-have authors, and editors who pick works — and compare each
-process against the observed data on five statistics at once.
+Anthologies of African American literature agree with one another far more
+about *who* belongs than about *which texts* represent them. Two anthologies
+from different publishers share, on average, about a quarter of their authors
+but only about 7% of their works.^[Mean pairwise Jaccard overlap across the
+317 cross-series edition pairs: $J_A = .247$ for authors, $J_W = .068$ for
+works, with excerpts coalesced into their parent works (the primary work
+unit; dropping excerpts or counting them as distinct works gives the same
+qualitative picture). Same-series pairs are excluded from all agreement
+statistics in this report.] This report asks what that gap actually means, by
+building selection models and testing which of them can predict real
+anthologies. Three questions, three answers:
 
-Three findings. First, the objection is half right: every model we tested
-produces more author-agreement than work-agreement, so the *direction* of the
-result is what pool structure alone predicts. Second, no simple model
-reproduces the data: author-first and work-first processes alike miss at least
-one statistic by five standard deviations or more. Third, one model fits
-everything. Give editors a fixed author canon of moderate strength, let
-canonical authors take the larger allocations, and let each editor choose an
-author's works from an oeuvre about **twice** the size of what our anthologies
-happen to have printed — and all five statistics land within about one Monte
-Carlo standard deviation. "You've gotta have Brooks, but not necessarily
-*Bronzeville*" is not an artifact of pool size; on these tests it is the
-generative process the data prefer.
+1. **Is the gap just arithmetic?** Partly. With ~600 candidate authors and
+   ~3,000 candidate works, almost any selection process agrees more about
+   authors than works, so the *direction* of the gap proves nothing — it is
+   not "improbable," only counterintuitive for a criticism that locates value
+   in texts. For works to out-agree authors, selection would have to be
+   *more* author-centered, not less: either each author carries a few
+   signature works that every editor converges on (a heavily weighted die),
+   or authors receive so many selections apiece that matches pile up (many
+   rolls of a fair one). The first is unsupported by the data and the second
+   runs against the shrinkage of per-author space documented elsewhere in
+   this project.^[Structurally,
+   with single-author works and equal per-author allocations, work-level
+   Jaccard can never exceed author-level Jaccard under author-first
+   selection; inversion requires strong within-author concentration combined
+   with large allocations tilted toward commonly shared authors. The real
+   edition shapes supply the allocations, but the fitted within-author
+   concentration is weak ($\alpha \approx 0.5$) and fails model selection
+   below. So A > W is the expected signature of *weakly* author-valuing
+   selection — the observed record — while W > A would paradoxically signal
+   a canon that values authors more.] What arithmetic does not supply is the
+   *magnitude*: no single "shared canon of authors" process reproduces the
+   observed pattern of agreement.
 
-# The question
+2. **Do editors share preferences for authors, for works, or both?** Authors,
+   strongly: a model that knows which authors were anthologized before
+   predicts later anthologies far better than chance. Works, essentially no —
+   once one fact is taken into account: a new edition of an *existing series*
+   keeps about three quarters of its predecessor's works, while unrelated
+   anthologies re-select fewer than one in five. So work selections are
+   highly predictable from the same series' own prior edition and nearly
+   unpredictable from *other editors'* prior choices. Modeling that
+   self-copying explicitly turns out to explain an order of magnitude more
+   than any cross-editor work preference, and once it is in the model, adding
+   a work preference makes predictions *worse* in five of six specifications.
 
-Our argument has leaned on statements of the form "if value inhered in
-specific texts, work-level consensus should be at least as strong as
-author-level consensus." The worry is that this counterfactual may be
-impossible: author matches are far more likely than work matches under nearly
-*any* process, so author-agreement exceeding work-agreement (**A > W**) might
-be informative about nothing. Only two mechanisms could push work-agreement
-above author-agreement — a fixed core of signature works per author ("fractal
-canonicity") or many works per selected author — and both operate by
-*strengthening* author-level structure. Whether the observed A > W exceeds
-what pool sizes predict is a question a simulation can answer and intuition
-cannot.
+3. **Does any simple shared-canon process fully account for the record?** No.
+   Even the best model — shared author propensity plus series self-copying —
+   still understates how much *independent* editorial teams agree with each
+   other, about authors and even about works. Cross-editor work choice is
+   therefore not literally random: it is weak, an order of magnitude less
+   structured than author choice, and what little structure exists is
+   exactly what no tested process explains. That residue is the genuinely
+   unexplained (and most interesting) part of the corpus.
 
-# How the simulation works
+The defensible thesis is therefore:
 
-The script is `analysis/overlap/author_work_agreement_models.py`.
+> Anthology selection is organized primarily through authors, and at the work
+> level primarily through each series revising itself. Apparent cross-editor
+> consensus on particular works is mostly series self-inheritance. The
+> agreement that remains among independent editors exceeds every stable-canon
+> process tested here and requires historical and institutional explanation.
 
-## Replaying the corpus under counterfactual editors
+A corollary worth stating plainly: the only place in this record where a
+*particular text's* canonicity is legible is series self-inheritance — that
+is, precisely where no fresh editorial judgment occurs. Wherever judgment is
+fresh, the name persists and the text is drawn anew.
 
-Each of the 26 AFAM-tagged anthologies (1929–2025) is re-simulated many times.
-A simulated edition keeps the real edition's *shape* — how many authors, how
-many works, how many works per author — but replaces the actual choices with
-draws from the pool of authors and works in print by that edition's
-year.^[Eligibility is anachronism-proof: an author or work first observed in
-the corpus after a given anthology's publication year is excluded from its
-pool. All analyses use root works only (excerpts folded into parents) and the
-317 cross-series edition pairs; within-series pairs (e.g. NAAAL 1997 vs. 2004)
-are excluded, as elsewhere in the project.]
+# The two regimes of reselection
 
-Five counterfactual editors:
+The single most consequential fact for modeling is that "reselection" mixes
+two very different behaviors. Editions that continue a series (NAAAL 1997 →
+2004 → 2014 → 2025; *Afro-American Writing* 1972 → 1985; *Cavalcade* 1971 →
+1991; *African American Literature* 1993 → 1998) are revisions: they inherit
+most of their predecessor. Editions from different series are independent
+selections:
 
-| Model | How it selects |
-|---|---|
-| **Author-first, uniform** | Picks authors uniformly; picks each author's works at random from their corpus |
-| **Author-first, weighted** | Same, but picks concentrate on each author's top-ranked works (dial $\alpha$) |
-| **Author-canon** | Carries a fixed ranking of *authors* and picks concentrate on the top ranks (dial $\gamma$); work choice within each author is random |
-| **Work-first, uniform** | Picks works at random from the whole pool; the author list is whoever wrote them |
-| **Work-first, weighted** | Same, but picks concentrate on a fixed global ranking of works (dial $\beta$) |
+| Pair type | Pairs | Work retention | Author retention | $J_W$ | $J_A$ |
+|---|---:|---:|---:|---:|---:|
+| Within-series | 8 | 73.9% | 87.5% | .563 | .660 |
+| Cross-series | 317 | 18.4% | 51.6% | .068 | .247 |
 
-The author-canon model is our thesis made generative: independent editors
-converge on the same *names* (the canon is drawn once per trial and shared by
-every simulated anthology in that trial) while each editor freely chooses
-which works to print. One mechanical detail matters: the sampler gives the
-highest-ranked authors the largest work-count slots, so canonical authors
-receive the larger allocations — as they demonstrably do in the real
-anthologies. By default all rankings are random, asking whether *any* stable
-canon produces the observed pattern; a confirmatory variant uses the observed
-selection frequencies instead.
+Any analysis that pools these regimes will mistake series inertia for
+cross-editor consensus, in two ways: a "how often was this work selected
+before?" score counts a work carried through four NAAAL revisions as four
+times more canonical than a work chosen once, and a prediction test whose
+later anthologies are mostly series follow-ups rewards a work effect simply
+because NAAAL reselects NAAAL. The models below therefore count prior
+selections by distinct *series*, and give candidates that appeared in the
+focal edition's immediate same-series predecessor their own explicit
+carryover effect.^[An earlier draft of this analysis, lacking both controls,
+found a "modest but real" cross-series work effect; that finding does not
+survive them. A still earlier draft found that a single author-canon
+simulation could reproduce the corpus summaries; that fit depended on three
+implementation errors (latent works that could never recur across editions,
+excerpts silently dropped rather than folded into parents, and candidate
+pools seeded by the very anthology being predicted) and disappears when they
+are corrected — none of 500 corrected simulations comes as close to the data
+as required (joint $p = .002$ in every work-unit specification).]
 
-## Corpus inflation
+# How the models are tested
 
-The simulation's work pools are, by construction, the works our anthologies
-printed. For author-first models this builds in a false assumption: it forces
-every counterfactual editor to choose Langston Hughes selections from the 112
-Hughes works some anthology chose, when real editors chose from an oeuvre
-several times that size. The inflation parameter $\lambda$ removes the
-restriction: each author's effective corpus becomes their observed works plus
-$\lambda$ times as many unobserved ones, and a pick that lands on an
-unobserved work counts as a unique, never-shared selection.^[Unobserved picks
-can never coincide across editions, which slightly overstates disagreement;
-the fitted $\lambda$ is therefore a lower bound on the effective pool size.]
-Fit mode (`--mode fit`) grid-searches $(\gamma, \lambda)$ for the author-canon
-model, scoring each cell by the RMS $z$-distance from the data across all five
-statistics (200 trials per cell; the best cell is re-run at 1,000 trials).
+Every model re-selects the 26 anthologies with their observed *shapes* held
+fixed — the same number of authors and the same works-per-author allocation
+as the real edition — so models differ only in **what drives selection**:
 
-## Five statistics
+- **Uniform**: any eligible author, any of their works.
+- **Author-only**: authors with stronger prior track records are favored;
+  works within an author are free.
+- **Work-only**: individually favored works drive selection and drag their
+  authors in.
+- **Mixed**: both effects at once.
+- Each of the above **with or without series carryover**: candidates that
+  appeared in the edition's same-series predecessor get an extra boost.
 
-For every pair of anthologies we compute the **Jaccard index** (shared items
-over combined items) twice — over authors and over works. Five statistics
-summarize a corpus, real or simulated:
+That yields eight nested families.^[Formally, for an allocation slot of $k$
+works, author $a$, and work subset $S$: $P(a,S \mid k,U) \propto
+R_A(a)^{-\gamma}\, e^{\delta_A \mathbb{1}[a \in P_A]}
+\binom{|\Omega_a|}{k}^{-1} \prod_{w\in S} R_W(w)^{-\alpha}\,
+e^{\delta_W \mathbb{1}[w \in P_W]}$, where $U$ is the set of still-unused
+authors, $\Omega_a$ is $a$'s eligible oeuvre, and $P_A, P_W$ are the author
+and work sets of the most recent same-series predecessor. Marginalizing over
+work subsets lets strong works pull their author in, so work-only is a real
+alternative rather than uniform author choice in disguise. Author ranks are
+prior AFAM selection counts over distinct series; work ranks use selection
+conditional on author inclusion, $q_w = (n_w + 1/2)/(n_{a(w)} + 1)$, on the
+same series basis, with midranks for ties. Authorless works get the same
+treatment in their own likelihood; coauthored bundles (rare) are excluded and
+reported. A latent-oeuvre inflation parameter $\lambda$ allows unobserved
+works; it fits to zero, which the likelihood cannot distinguish from
+unidentifiability, so oeuvre size remains an open question.]
 
-1. mean Jaccard over authors, $J_A$;
-2. mean Jaccard over works, $J_W$;
-3. the gap $D = J_A - J_W$ (positive: authors agree more);
-4. the share of pairs with more shared authors than shared works (raw counts);
-5. the **zero-shared-works rate**: among all (pair, shared author) instances,
-   the share where the two anthologies share *none* of that author's works —
-   "Brooks without *Bronzeville*" as a number.
+Validation is chronological, so no model ever peeks at what it predicts.
+Parameters are tuned only on anthologies up to a cutoff (1991 or 1998), with
+each training edition scored using only strictly earlier records; rankings
+are then frozen and the model must predict the *actual selections* of the
+anthologies published after the cutoff. The score is the model's log
+probability of each real choice — literally, how unsurprised the model is by
+what the later editors did.^[Grids: $\gamma, \alpha \in \{0,.5,1,1.5,2,3\}$,
+$\lambda \in \{0,1,3,7\}$, $\delta_A, \delta_W \in \{0,2,4,6\}$, chosen by
+conditional log predictive density on training editions from 1968 onward. The
+carryover deltas are identified by the same-series successors inside each
+training window (1985 and 1991, plus 1998 at the later cutoff). Predictions
+condition on observed novelty: identities absent from all pre-cutoff records
+are outside the frozen pool, and coverage is reported (at the 1998 split the
+pool covers 83.0% of held-out author selections and 72.9% of authored-work
+selections; at 1991, 67.0% and 41.8%). The carryover indicator for a held-out
+edition uses its predecessor's *realized* contents — history available at
+prediction time, never the focal outcome.]
 
-Fitting all five is the point: models that match $D$ alone are easy to find
-and contradict each other about everything else.^[1,000 trials per model, seed
-42. Each trial simulates all 26 anthologies and yields one value per
-statistic; we report the model's mean $\pm$ sd and $z$, the observed value's
-distance from the model mean in model standard deviations.]
+Finally, each family's best model must pass a texture check it was never
+fitted to: simulate the entire held-out period 400 times and compare the
+simulated pattern of pairwise agreement to the observed one.^[Eight reserved
+statistics — cross-series $J_A$, $J_W$, the share of pairs agreeing more on
+authors than works, the share of shared authors with zero shared works, the
+temporal slopes of both Jaccards, and within-series $J_A$ and $J_W$ — are
+evaluated jointly with covariance estimated on half the simulations and
+calibrated on the other half. Simulated series chain through their own
+*simulated* predecessors, so within-series correlation is generated, not
+copied in.]
 
-# Results
+# What the models show
 
-Observed, over the 317 cross-series pairs: $J_A = 0.219$, $J_W = 0.045$, $D =
-+0.175$; 89.3% of pairs share more authors than works; and a shared author
-comes with **zero** shared works 56.0% of the time.
+## Authors are the backbone
 
-## No simple model fits
+Knowing which authors have been selected before, and favoring them, is worth
+about one log unit per selection decision over uniform choice on held-out
+anthologies — roughly an $e$-fold gain in the probability of each real
+choice — and it helps on series continuations and on fresh anthologies alike. Pure work-driven selection performs *worse* than uniform. This
+is the strongest and most stable effect in the corpus short of series
+carryover itself.
 
-With no inflation ($\lambda = 0$) and random fixed rankings, every model fails
-somewhere (RMS $z$ across the five statistics, 1,000 trials each):
+## Work-level agreement is series self-copying
 
-| Model | Simulated $D$ | RMS $z$ | Where it breaks |
-|---|---|---|---|
-| Author-first, uniform | $+0.077$ | 25.3 | everything |
-| Author-first, $\alpha = 4$ | $+0.058$ | — | worse with concentration |
-| Author-canon, $\gamma = 2$ | $+0.111$ | 15.9 | count rate 12% vs. 89%; zero-share 8% vs. 56% |
-| Work-first, uniform | $+0.185$ | 6.8 | count rate 97% ($z=-12$); zero-share 60% ($z=-5$) |
-| Work-first, $\beta = 0.5$ | $+0.181$ | 5.5 | $J_A$ ($z=-5$), $J_W$ ($z=-9$) |
-| Work-first, $\beta = 1$ | $+0.172$ | 8.9 | $J_W$ ($z=-12$); zero-share 31% ($z=+14$) |
-| **Author-canon, $\gamma = 1.5$, $\lambda = 1$** | $+0.173$ | **0.9** | **nothing** |
+Held-out log score per selection decision, primary specification (higher is
+better; **bold** = best per cutoff):^[Coalesced work unit. "Chained" columns
+in the output CSVs split these totals into editions with and without a
+same-series predecessor; the carryover gain is concentrated entirely in the
+chained editions (3.5–4.9 log units per decision), as it should be.]
 
-Two details stand out. Author-first models produce less than half the observed
-gap, and turning up within-author concentration moves them *further* from the
-data. And the uninflated author-canon models fail in a surprising direction:
-because canonical authors take the big allocations and everyone picks from the
-same small printed corpora, shared authors pile up shared works, and nearly
-90% of simulated pairs share more *works* than authors — the reverse of the
-observed corpus. Work-first models match $D$ but get the texture of
-disagreement wrong on both sides.
+| Family | 1998 cutoff | 1991 cutoff |
+|---|---:|---:|
+| Uniform | -10.74 | -9.19 |
+| Author-only | -9.64 | -8.20 |
+| Work-only | -10.98 | -9.34 |
+| Mixed | -9.42 | -8.05 |
+| Series-only | -7.36 | -7.58 |
+| Author+series | **-6.51** | -6.81 |
+| Work+series | -7.74 | -7.68 |
+| Mixed+series | -6.65 | **-6.77** |
 
-![Distribution of the simulated agreement gap $D$ under each model (1,000
-trials; rows: author-first, author-canon, work-first), with the observed value
-as the black line.](../output/author_work_agreement_models_real.png)
+Two things stand out. First, *every* family with series carryover beats
+*every* family without it — even bare self-copying with no author or work
+preferences at all (series-only) out-predicts the best canon-style model.
+Adding carryover to the author-only model improves the held-out total by
+1,188–2,017 log-score units depending on specification; the cross-series work
+effect an earlier draft reported was worth about 120–140.
 
-## The joint $(\gamma, \lambda)$ fit: one model matches everything
+Second, once carryover is in the model, the work preference stops earning its
+keep: adding it changes the held-out total by $-95$ at the 1998 cutoff and
+$+32$ at 1991 — the latter being the only specification, out of six (three
+work units × two cutoffs), where any cross-series work effect survives model
+selection, and by a trivial margin.^[Margins per decision, best vs.
+runner-up: drop $+.244$ and $+.158$, include $+.274$ and $+.108$, coalesce
+$+.147$, all favoring author+series; coalesce/1991 favors mixed+series by
+$+.035$. One honest residue: on *fresh* editions at matched $\gamma$, a small
+work term still improves the coalesced score by $\approx .2$ per decision at
+both cutoffs, so a weak cross-editor work preference on series-opening
+anthologies remains possible — but it is specification-sensitive and joint
+selection rejects it five times out of six.] The earlier "modest work
+effect" was series inertia wearing a work-canon costume.
 
-Grid-searching canon strength against corpus inflation produces a sharp,
-single basin at $\gamma = 1.5$, $\lambda = 1$:
+## What no model explains
 
-![Joint fit of the author-canon model. Each cell is the RMS $z$ across all
-five statistics (200 trials per cell, log color scale); the black box marks
-the best cell.](../output/author_work_agreement_models_fit.png)
+All 48 model–specification combinations fail the reserved texture check (all
+at the calibration floor, $p = .005$). The failure is informative. For the
+primary 1998 analysis, observed agreement vs. the best model's simulations:
 
-At that cell, re-run at 1,000 trials, every statistic is inside $\pm 1.3$
-model standard deviations:
+| Reserved statistic | Observed | Author+series simulates |
+|---|---:|---:|
+| $J_A$ between independent editions | .475 | .330 |
+| $J_W$ between independent editions | .156 | .043 |
+| $J_A$ within series | .876 | .686 |
+| $J_W$ within series | .732 | .593 |
 
-| Statistic | Simulated (mean ± sd) | Observed | $z$ |
-|---|---|---|---|
-| $J_A$ | $0.2232 \pm 0.0115$ | $0.2193$ | $-0.33$ |
-| $J_W$ | $0.0498 \pm 0.0041$ | $0.0446$ | $-1.28$ |
-| $D$ | $+0.1733 \pm 0.0099$ | $+0.1747$ | $+0.14$ |
-| Pairs with A > W (count) | $92.7\% \pm 2.8\%$ | $89.3\%$ | $-1.23$ |
-| P(zero shared works \| shared author) | $53.6\% \pm 2.4\%$ | $56.0\%$ | $+1.00$ |
+Carryover recovers most of the within-series texture that canon-style models
+miss entirely (they simulate within-series $J_W$ of .163 against an observed
+.732). What no family reproduces is how much *independent* editorial teams
+agree — on authors and, notably, on works. A stable popularity ranking plus
+series self-copying is not enough; the missing structure plausibly includes
+period and form coverage requirements, direct influence between anthologies,
+changing curricula, and editor or publisher lineages, none of which are
+identifiable from only 26 editions.
 
-The two parameters do separable work. $\gamma = 1.5$ alone reproduces the
-author-agreement level exactly, but at $\lambda = 0$ it produces triple the
-observed work-agreement; doubling every corpus ($\lambda = 1$) dilutes exactly
-the work-level coincidences while leaving author choice untouched. Neither
-half-measure works: the $\lambda = 0$ column bottoms out at RMS $z = 16$, the
-$\gamma = 0$ row at 22.
+# Caveats
 
-**What the fitted $\lambda$ means.** $\lambda = 1$ says editors behave as if
-choosing each author's works from a pool about twice what our anthologies
-printed. Documented oeuvres are much larger: Hughes's *Collected Poems* prints
-~860 poems against his 112 anthologized root works ($\lambda \approx 7$);
-McKay's *Complete Poems*, roughly 320 against 38 ($\lambda \approx 7$);
-Sterling Brown's collected poetry, on the order of 120–200 against 30
-($\lambda \approx 3$–$6$). At those values the model overshoots badly (at
-$\gamma = 1.5$, $\lambda = 4$: $J_W = 0.016$, zero-share 85%, RMS $z = 18$).
-So the data reject both extremes: editors neither choose from the tiny world
-of previously anthologized works nor uniformly from whole oeuvres. The
-effective choice set sits around double the anthologized corpus — some
-within-oeuvre concentration is real, but far too shallow to make works the
-unit of consensus.
-
-## Robustness: two ways to break the fit
-
-**The canon must buy space, not just membership.** Re-running the fit grid
-with allocations decoupled — the per-edition work counts randomly re-matched
-to the selected authors, so a top-canon author is no likelier to get the
-six-work slot — no cell fits (best RMS $z = 5.4$; zero-share off by $z = +9$).
-In the process the data prefer, canonical status governs *two* decisions:
-whether an author appears, and how much space they get.
-
-**The empirical-frequency canon does not substitute.** Anchoring the canon to
-the authors' observed selection frequencies and re-fitting both parameters
-also never fits (best RMS $z = 6.0$; at $\gamma = 1.5$, $\lambda = 1$ it
-wildly overshoots author consensus, $J_A = 0.307$ vs. $0.219$).^[This run is
-confounded by construction: observed frequencies are the *outcome* of the
-century-long process, so treating them as fixed selection propensities
-double-counts the canon's own history. We read it as a caution against "the
-editors consult the known popularity table," not as evidence against an
-author canon per se.] The data are consistent with editors sharing *a* stable
-author canon of Zipf-1.5 strength, not with that canon being the realized
-frequency ranking applied mechanically.
-
-## Synthetic sweep: W > A is impossible on the normalized measure
-
-Running the same machinery on invented corpora — 600 authors, 12 anthologies
-of 60 authors, sweeping concentration, works-per-author, and corpus size — the
-Jaccard gap $D$ never went negative in any of 120 parameter combinations. For
-author-first selection with equal works-per-author this is provable: every
-shared work implies a shared author, so work-Jaccard can never exceed
-author-Jaccard, however perfectly the within-author canon repeats. The two
-W-raising mechanisms surface only in the *raw count* statistic (with $k \ge 2$
-works per author plus strong concentration, most pairs share more works than
-authors), which the normalized measure sees through.
-
-![Synthetic sweep of the mean Jaccard gap by model family (rows), corpus size
-(columns), concentration (x) and works-per-author (y). Red throughout: no cell
-favors works.](../output/author_work_agreement_models_sweep.png)
-
-# What this means
-
-**The direction is arithmetic; the magnitude and texture are evidence.** A > W
-is what pool structure yields under essentially any process. But the gap's
-size, the count rate, and above all the 56% zero-shared-works rate
-discriminate sharply among processes — and reject everything except one.
-
-**The author-centered model fits, and nothing else does.** A fixed author
-canon of moderate strength, whose members receive the larger allocations, with
-work choice close to free over a pool twice the anthologized corpus,
-reproduces every statistic we measure within Monte Carlo noise. No work-first
-model matches the texture statistics at any dial setting.
-
-**Fractal canonicity survives only in weak form.** Editors who share an author
-share none of that author's works 56% of the time, and the fitted effective
-pool (2×) is far below documented oeuvre sizes (3–7×). Within-author cores
-exist but are shallow — enough to pull the effective pool below the whole
-oeuvre, nowhere near enough to make specific texts the carriers of value. The
-author survives as the unit of consensus precisely because no particular work
-has to.
-
-**Canonicity is also an allocation rule.** The decoupling check shows the data
-require canonical authors to get more space, not just admission. "Who is in
-the canon" and "who gets the pages" are, on these measurements, the same
-decision.
-
-# Limitations
-
-- **Shape preservation.** Real mode holds each edition's works-per-author
-  distribution (author family) or total work count (work-first) fixed at
-  observed values; the models cannot explain why those shapes are what they
-  are.
-- **$\lambda$ is an effective, not literal, pool size.** It absorbs both true
-  oeuvre size and any within-oeuvre concentration: "2× pool, uniform choice"
-  and "7× oeuvre, mildly concentrated choice" are observationally similar
-  here. Distinguishing them needs work-level data beyond the anthologized
-  corpus.
-- **Two fitted parameters, five statistics.** Three constraints remain after
-  fitting, and the decoupled and frequency-anchored grids show the surface can
-  fail to reach the data — the fit is falsifiable and its success is not
-  automatic.
-- **Authors still enter the pool via the corpus.** $\lambda$ relaxes the
-  printed-record restriction for works, not for authors.
-- **Synthetic mode is stylized** (single-authored works, no author-less works,
-  equal works-per-author, geometric corpus sizes), and the documented oeuvre
-  counts are round numbers that discipline the order of magnitude, not the
-  decimal.
+- The database records anthology appearances, not publication dates or
+  complete oeuvres, so "eligible" means "seen in an earlier anthology" and
+  predictions are conditional on previously represented identities.
+- The held-out periods are small (six editions after 1998, eleven after
+  1991); scores are descriptive comparisons, not population estimates.
+- Carryover models only the immediate same-series predecessor, with one
+  strength shared by all series, learned from the two or three same-series
+  successors available before each cutoff.
+- The texture failures show the model space is incomplete; they do not say
+  which omitted mechanism is responsible.
 
 # Reproducing {.unnumbered}
 
 ```bash
-# five-model comparison + synthetic sweep + CSVs (seed 42)
-uv run python analysis/overlap/author_work_agreement_models.py \
-    --mode all --n 1000 --sweep-trials 200 --save-csv
+# focused methodological regression tests
+uv run pytest -q \
+  tests/test_author_work_agreement_models.py \
+  tests/test_author_work_agreement_stress.py \
+  tests/test_author_work_agreement_bundle.py
 
-# joint (γ, λ) fit of the author-canon model, clean null
+# corrected author-canon grid (repeat for --work-unit drop / include)
 uv run python analysis/overlap/author_work_agreement_models.py \
-    --mode fit --fit-trials 200 --save-csv
+  --mode fit --work-unit coalesce --phantom-scope shared \
+  --fit-trials 100 --save-csv \
+  --out-fit output/author_work_agreement_models_fit_coalesced_shared.png \
+  --out-fit-csv data/author_work_agreement_models_fit_coalesced_shared.csv
 
-# best-fit cell at N=1000
-uv run python analysis/overlap/author_work_agreement_models.py \
-    --mode real --models author-canon --alphas 1.5 --lam 1 --n 1000
-
-# robustness: decoupled allocations; empirical-frequency canon
-uv run python analysis/overlap/author_work_agreement_models.py \
-    --mode fit --fit-trials 200 --decouple-allocation \
-    --out-fit output/author_work_agreement_models_fit_decoupled.png
-uv run python analysis/overlap/author_work_agreement_models.py \
-    --mode fit --fit-trials 200 --rank-by frequency \
-    --gammas 0,0.25,0.5,0.75,1,1.5 \
-    --out-fit output/author_work_agreement_models_fit_frequency.png
+# full prequential grids (gamma, alpha, lambda, delta_A, delta_W),
+# both cutoffs, 400-trial
+# held-out checks; series-basis ranks and carryover are the defaults
+# (--rank-basis editions / --deltas 0 restore the legacy model)
+uv run python analysis/overlap/author_work_agreement_stress_test.py --save-csv
 ```
 
-Outputs: `output/author_work_agreement_models_real.png`, `..._fit.png`,
-`..._fit_decoupled.png`, `..._fit_frequency.png`, `..._sweep.png`, and CSVs
-in `data/`.
+Principal outputs: `data/author_work_agreement_stress_{train_grid,holdout,
+ppc,coverage,series_gap}.csv`, plus
+`data/author_work_agreement_corrected_best500.csv` and
+`data/author_work_agreement_eligibility_leakage.csv`.

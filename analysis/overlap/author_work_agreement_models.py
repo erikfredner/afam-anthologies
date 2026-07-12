@@ -24,13 +24,13 @@ same names) with free work choice within each selected author.
 
 Corpus inflation (--lam): for author-family models with uniform work choice
 (author-uniform, author-canon), each author's effective corpus is their
-observed anthologized works plus round(lam * observed) unobserved works; a
-pick that lands on an unobserved work becomes a unique, never-shared
-selection. This models the fact that editors choose from full oeuvres, not
-from the corpus the anthologies happen to have printed. --mode fit
-grid-searches (gamma, lam) for the author-canon model jointly against all
-five observed statistics (J(authors), J(works), D, the count rate, and the
-zero-shared-works share), reporting RMS z per cell and the best-fitting cell.
+observed anthologized works plus round(lam * observed) latent works. The
+legacy ``--phantom-scope private`` makes latent selections edition-specific;
+``--phantom-scope shared`` gives them stable identities in a finite shared
+oeuvre. --mode fit grid-searches (gamma, lam) for the author-canon model
+against four non-redundant statistics (J(authors), J(works), the count rate,
+and the zero-shared-works share), with both legacy marginal-z and joint
+covariance-aware diagnostics.
 
 --decouple-allocation (robustness): re-match the per-author work-count
 multiset to the selected authors uniformly at random over feasible
@@ -90,6 +90,8 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import math
+import numbers
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
@@ -135,6 +137,9 @@ DEFAULT_GAMMAS = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0)
 DEFAULT_LAMBDAS = (0.0, 0.5, 1.0, 2.0, 4.0)
 DEFAULT_K_VALUES = (1, 2, 3, 5)
 DEFAULT_MEAN_CORPUS = (2.0, 5.0, 10.0)
+
+WORK_UNIT_MODES = ("drop", "include", "coalesce")
+PHANTOM_SCOPES = ("private", "shared")
 
 MODEL_NAMES = (
     "author-uniform",
@@ -195,11 +200,17 @@ def draw_author_pool_ranks(
     return {a: int(r) + 1 for a, r in zip(sorted(author_ids), perm)}
 
 
+def _phantom_work_id(author_id: str, index: int) -> str:
+    """Stable latent-work id used by the shared-oeuvre stress tests."""
+    return f"~shared|{author_id}|{index}"
+
+
 def draw_author_corpus_ranks(
     author_to_works: dict[str, set[str]],
     rng: np.random.Generator,
     rank_by: str,
     work_freq: dict[str, int] | None = None,
+    lam: float = 0.0,
 ) -> dict[str, dict[str, int]]:
     """One fixed 1-based rank per work within each author's full corpus.
 
@@ -208,7 +219,12 @@ def draw_author_corpus_ranks(
     """
     ranks: dict[str, dict[str, int]] = {}
     for aid, wids in author_to_works.items():
-        corpus = sorted(wids)
+        observed = sorted(wids)
+        phantom = [
+            _phantom_work_id(aid, i)
+            for i in range(int(round(lam * len(observed))))
+        ]
+        corpus = observed + phantom
         if rank_by == "frequency":
             order = sorted(corpus, key=lambda w: (-(work_freq or {}).get(w, 0), w))
             ranks[aid] = {w: r for r, w in enumerate(order, start=1)}
@@ -239,6 +255,42 @@ def draw_global_work_ranks(
 # ── Data loading and pools ────────────────────────────────────────────────────
 
 
+def _stable_id(value: object) -> str:
+    """Stringify numeric database ids without the float ``.0`` artifact."""
+    if isinstance(value, numbers.Integral):
+        return str(int(value))
+    if isinstance(value, numbers.Real) and math.isfinite(float(value)):
+        f = float(value)
+        return str(int(f)) if f.is_integer() else str(f)
+    return str(value)
+
+
+def preprocess_work_units(df: pd.DataFrame, mode: str) -> pd.DataFrame:
+    """Apply an explicit work-unit estimand.
+
+    ``drop`` discards excerpt rows (the legacy ``root works`` behavior),
+    ``include`` treats excerpts as distinct works, and ``coalesce`` maps every
+    excerpt to its parent so any member of a work family counts as the same
+    selected work.  Coalescing keeps the author attribution on the selected
+    excerpt row and lets downstream set operations remove duplicate family
+    selections.
+    """
+    if mode not in WORK_UNIT_MODES:
+        raise ValueError(f"Unknown work-unit mode {mode!r}; choose {WORK_UNIT_MODES}.")
+    out = df.copy()
+    if mode == "drop":
+        return out[out["parent_id"].isna()].copy()
+    if mode == "include":
+        return out
+
+    work_key = out["parent_id"].where(out["parent_id"].notna(), out["work_id"])
+    out["work_id"] = work_key.map(_stable_id)
+    # The new work_id is already the family root.  Clearing parent_id prevents
+    # an accidental second preprocessing pass from dropping coalesced rows.
+    out["parent_id"] = pd.NA
+    return out
+
+
 def load_divergence_frame(only_root_works: bool) -> pd.DataFrame:
     """Load the shared divergence query with edition keys (as the sibling does)."""
     df = query_db(query_path("work-selection-divergence"))
@@ -251,9 +303,74 @@ def load_divergence_frame(only_root_works: bool) -> pd.DataFrame:
         axis=1,
     )
     df["anthology_publication_year"] = df["anthology_publication_year"].astype(int)
-    if only_root_works:
-        df = df[df["parent_id"].isna()].copy()
-    return df
+    return preprocess_work_units(df, "drop" if only_root_works else "include")
+
+
+def load_work_unit_frame(mode: str) -> pd.DataFrame:
+    """Load the divergence query and apply one explicit work-unit mode."""
+    df = query_db(query_path("work-selection-divergence"))
+    df["edition_key"] = df.apply(
+        lambda r: (
+            f"{int(r['series_id'])}|{r['edition_number']}"
+            if pd.notna(r["series_id"])
+            else str(r["edition_id"])
+        ),
+        axis=1,
+    )
+    df["anthology_publication_year"] = df["anthology_publication_year"].astype(int)
+    return preprocess_work_units(df, mode)
+
+
+def eligibility_leakage_diagnostics(df: pd.DataFrame) -> pd.DataFrame:
+    """Measure focal-edition seeding of the observed eligibility pools.
+
+    An item is ``leaked`` for an edition when it has no occurrence in any
+    *other* edition at or before the focal year.  Such an item is eligible only
+    because the outcome being simulated contributed it to the risk set.
+    """
+    base = df[["edition_key", "anthology_publication_year", "work_id", "author_id"]].copy()
+    base["work_id"] = base["work_id"].map(_stable_id)
+    base["author_id"] = base["author_id"].map(
+        lambda x: None if pd.isna(x) else _stable_id(x)
+    )
+    work_occ = {
+        wid: list(zip(g["edition_key"], g["anthology_publication_year"]))
+        for wid, g in base.drop_duplicates(["edition_key", "work_id"]).groupby("work_id")
+    }
+    authored = base.dropna(subset=["author_id"]).drop_duplicates(
+        ["edition_key", "author_id"]
+    )
+    author_occ = {
+        aid: list(zip(g["edition_key"], g["anthology_publication_year"]))
+        for aid, g in authored.groupby("author_id")
+    }
+
+    rows: list[dict[str, object]] = []
+    for ek, grp in base.groupby("edition_key", sort=False):
+        year = int(grp["anthology_publication_year"].min())
+        works = set(grp["work_id"])
+        authors = set(grp["author_id"].dropna())
+        leaked_works = sum(
+            not any(other != ek and other_year <= year for other, other_year in work_occ[w])
+            for w in works
+        )
+        leaked_authors = sum(
+            not any(other != ek and other_year <= year for other, other_year in author_occ[a])
+            for a in authors
+        )
+        rows.append(
+            {
+                "edition_key": ek,
+                "year": year,
+                "n_authors": len(authors),
+                "n_works": len(works),
+                "leaked_authors": leaked_authors,
+                "leaked_works": leaked_works,
+                "author_leakage_rate": leaked_authors / len(authors) if authors else 0.0,
+                "work_leakage_rate": leaked_works / len(works) if works else 0.0,
+            }
+        )
+    return pd.DataFrame(rows).sort_values(["year", "edition_key"]).reset_index(drop=True)
 
 
 def build_work_to_authors(df: pd.DataFrame) -> dict[str, frozenset[str]]:
@@ -351,6 +468,7 @@ def sample_edition_author_first(
     lam: float = 0.0,
     phantom_prefix: str = "",
     decouple: bool = False,
+    phantom_scope: str = "private",
 ) -> SimulatedEdition:
     """Author-first: draw distinct authors satisfying the observed per-author
     work-count multiset, then draw each author's works (uniform or Zipf(alpha)
@@ -361,17 +479,20 @@ def sample_edition_author_first(
     argmax over the qualifying prefix) instead of uniformly, so independent
     editions converge on the same top-ranked authors.
 
-    lam > 0 inflates each author's corpus with round(lam * m) unobserved
-    works (uniform work choice only, alpha == 0). A pick that lands on an
-    unobserved work becomes a unique, never-shared work id namespaced by
-    phantom_prefix (pass the edition key so phantoms can never collide
-    across editions).
+    lam > 0 inflates each author's corpus with round(lam * m) latent works.
+    Under the legacy ``private`` scope a latent selection is namespaced by
+    edition and can never recur.  Under ``shared`` the finite latent oeuvre is
+    shared across editions, so independent editors can select the same unseen
+    work.  ``alpha`` may be positive with inflation when ``corpus_ranks`` also
+    contains the stable latent-work ids.
 
     decouple=True re-matches the work-count multiset to the selected authors
     uniformly at random over feasible assignments, severing the link between
     an author's canon rank and the size of their allocation."""
-    if lam > 0 and alpha > 0:
-        raise ValueError("lam (corpus inflation) requires alpha == 0")
+    if phantom_scope not in PHANTOM_SCOPES:
+        raise ValueError(
+            f"Unknown phantom scope {phantom_scope!r}; choose {PHANTOM_SCOPES}."
+        )
     entries = sorted(
         eligible_by_author, key=lambda t: (-_effective_size(len(t[1]), lam), t[0])
     )
@@ -425,24 +546,38 @@ def sample_edition_author_first(
     author_work_ids: dict[str, set[str]] = {}
     for idx, count in assigned:
         aid, wids = entries[idx]
-        m = len(wids)
-        n_ph = 0
-        if lam > 0:
-            n_phantom_pool = _effective_size(m, lam) - m
-            if n_phantom_pool > 0:
-                n_ph = int(rng.hypergeometric(n_phantom_pool, m, count))
-        n_real = count - n_ph
+        phantom_ids = [
+            _phantom_work_id(aid, i)
+            for i in range(_effective_size(len(wids), lam) - len(wids))
+        ]
+        candidates = list(wids) + phantom_ids
         if alpha > 0:
             if corpus_ranks is None:
                 raise ValueError("corpus_ranks is required when alpha > 0")
-            w = weights_for_subset(wids, corpus_ranks[aid], alpha)
-            picked = _weighted_pick(m, w, n_real, rng)
-        elif n_real < m:
-            picked = rng.choice(m, size=n_real, replace=False)
+            rank_map = corpus_ranks[aid]
+            if any(wid not in rank_map for wid in candidates):
+                # Direct callers may provide ranks for observed works only.
+                # Simulation mode normally pre-ranks the inflated oeuvre, but
+                # a deterministic tail extension keeps the sampler total and
+                # makes the implied assumption explicit.
+                rank_map = dict(rank_map)
+                next_rank = max(rank_map.values(), default=0) + 1
+                for wid in sorted(set(candidates) - rank_map.keys()):
+                    rank_map[wid] = next_rank
+                    next_rank += 1
+            w = weights_for_subset(candidates, rank_map, alpha)
+            picked = _weighted_pick(len(candidates), w, count, rng)
+        elif count < len(candidates):
+            picked = rng.choice(len(candidates), size=count, replace=False)
         else:
-            picked = np.arange(m)
-        works = {wids[int(i)] for i in picked}
-        works.update(f"~{phantom_prefix}|{aid}|{j}" for j in range(n_ph))
+            picked = np.arange(len(candidates))
+        works: set[str] = set()
+        for i in picked:
+            wid = candidates[int(i)]
+            if wid.startswith("~shared|") and phantom_scope == "private":
+                latent_index = wid.rsplit("|", 1)[1]
+                wid = f"~{phantom_prefix}|{aid}|{latent_index}"
+            works.add(wid)
         author_work_ids[aid] = works
 
     authorless = _sample_authorless(
@@ -554,6 +689,84 @@ def summarize_pairs(stats: list[PairStat]) -> Summary:
     return Summary(gt / n, tie / n, (n - gt - tie) / n, ja - jw, ja, jw)
 
 
+FIT_VECTOR_NAMES = ("jaccard_authors", "jaccard_works", "rate_a_gt_w", "zero_share")
+
+
+def fit_stat_vector(summary: Summary, zero_share: float) -> np.ndarray:
+    """Four non-redundant fitted summaries.
+
+    The legacy objective also included ``D = J_A - J_W`` even though it is an
+    exact linear combination of the first two entries.  Stress-test fitting
+    deliberately excludes it.
+    """
+    return np.array(
+        [
+            summary.mean_jaccard_authors,
+            summary.mean_jaccard_works,
+            summary.rate_a_gt_w,
+            zero_share,
+        ],
+        dtype=float,
+    )
+
+
+def fit_sim_matrix(arrays: dict[str, np.ndarray]) -> np.ndarray:
+    """Align simulation arrays with :func:`fit_stat_vector`."""
+    return np.column_stack([arrays["ja"], arrays["jw"], arrays["rate"], arrays["zero"]])
+
+
+def _regularized_covariance(sim_matrix: np.ndarray) -> np.ndarray:
+    if sim_matrix.ndim != 2 or sim_matrix.shape[0] < 2:
+        raise ValueError("sim_matrix must have at least two rows")
+    cov = np.atleast_2d(np.cov(sim_matrix, rowvar=False, ddof=1)).astype(float)
+    scale = float(np.trace(cov) / cov.shape[0])
+    ridge = max(scale * 1e-6, 1e-12)
+    return cov + np.eye(cov.shape[0]) * ridge
+
+
+def joint_fit_score(obs_vector: np.ndarray, sim_matrix: np.ndarray) -> float:
+    """Root-mean-square Mahalanobis discrepancy across independent targets."""
+    obs = np.asarray(obs_vector, dtype=float)
+    sims = np.asarray(sim_matrix, dtype=float)
+    if sims.ndim != 2 or sims.shape[1] != len(obs):
+        raise ValueError("obs_vector and sim_matrix columns do not align")
+    delta = obs - sims.mean(axis=0)
+    inv = np.linalg.pinv(_regularized_covariance(sims))
+    d2 = float(delta @ inv @ delta)
+    return math.sqrt(max(d2, 0.0) / len(obs))
+
+
+def synthetic_likelihood_score(obs_vector: np.ndarray, sim_matrix: np.ndarray) -> float:
+    """Gaussian synthetic negative log likelihood (lower is better).
+
+    Unlike a marginal-z RMS, this uses the joint covariance and includes the
+    log-determinant penalty, so a deliberately overdispersed model is not
+    rewarded merely for making every marginal z-score small.
+    """
+    obs = np.asarray(obs_vector, dtype=float)
+    sims = np.asarray(sim_matrix, dtype=float)
+    if sims.ndim != 2 or sims.shape[1] != len(obs):
+        raise ValueError("obs_vector and sim_matrix columns do not align")
+    cov = _regularized_covariance(sims)
+    delta = obs - sims.mean(axis=0)
+    sign, logdet = np.linalg.slogdet(cov)
+    if sign <= 0:
+        raise RuntimeError("regularized covariance is not positive definite")
+    d2 = float(delta @ np.linalg.solve(cov, delta))
+    return 0.5 * (d2 + logdet + len(obs) * math.log(2 * math.pi))
+
+
+def joint_predictive_p(obs_vector: np.ndarray, sim_matrix: np.ndarray) -> float:
+    """Empirical upper-tail probability of the joint Mahalanobis discrepancy."""
+    obs = np.asarray(obs_vector, dtype=float)
+    sims = np.asarray(sim_matrix, dtype=float)
+    center = sims.mean(axis=0)
+    inv = np.linalg.pinv(_regularized_covariance(sims))
+    obs_d2 = float((obs - center) @ inv @ (obs - center))
+    sim_d2 = np.einsum("ij,jk,ik->i", sims - center, inv, sims - center)
+    return float((np.count_nonzero(sim_d2 >= obs_d2) + 1) / (len(sim_d2) + 1))
+
+
 def zero_share_rate(
     author_work_ids: dict[str, dict[str, set[str]]],
     sorted_keys: list[str],
@@ -579,9 +792,10 @@ def zero_share_rate(
 @dataclass(frozen=True)
 class ModelConfig:
     label: str
-    family: str  # "author" | "canon" | "work"
-    alpha: float  # α (within-author), γ (author canon), or β (work canon)
+    family: str  # "author" | "canon" | "mixed" | "work"
+    alpha: float  # α (within-author), legacy γ for canon, or β for work
     lam: float = 0.0  # corpus inflation (author family, uniform work choice)
+    gamma: float = 0.0  # explicit author-canon strength for mixed models
 
 
 def build_model_configs(
@@ -640,6 +854,7 @@ class RealData:
     """Pools, targets, and observed statistics computed once per session."""
 
     sorted_keys: list[str]
+    edition_year: dict[str, int]
     real_targets: dict[str, EditionTarget]
     elig_by_author: dict[str, list[tuple[str, list[str]]]]
     eligible_authored: dict[str, list[str]]
@@ -657,18 +872,36 @@ class RealData:
     author_freq: dict[str, int]
 
 
-def prepare_real_data(df: pd.DataFrame, cross_series_only: bool) -> RealData:
-    """Build every pool and observed statistic real/fit mode needs."""
+def prepare_real_data(
+    df: pd.DataFrame,
+    cross_series_only: bool,
+    edition_keys: set[str] | None = None,
+    frequency_df: pd.DataFrame | None = None,
+) -> RealData:
+    """Build every pool and observed statistic real/fit mode needs.
+
+    ``edition_keys`` restricts the anthology outcomes and shapes being scored
+    while retaining the full frame for historical pools.  ``frequency_df``
+    supplies ranks learned on a training period for chronological validation.
+    """
+    selected_df = (
+        df[df["edition_key"].isin(edition_keys)].copy()
+        if edition_keys is not None
+        else df
+    )
+    if selected_df.empty:
+        raise ValueError("No editions remain after applying edition_keys.")
     edition_works = {
-        ek: set(grp["work_id"].astype(str)) for ek, grp in df.groupby("edition_key")
+        ek: set(grp["work_id"].astype(str))
+        for ek, grp in selected_df.groupby("edition_key")
     }
     edition_authors = {
         ek: set(grp["author_id"].dropna().astype(str))
-        for ek, grp in df.groupby("edition_key")
+        for ek, grp in selected_df.groupby("edition_key")
     }
     edition_year = {
         ek: int(grp["anthology_publication_year"].min())
-        for ek, grp in df.groupby("edition_key")
+        for ek, grp in selected_df.groupby("edition_key")
     }
     sorted_keys = sorted(edition_works, key=lambda k: (edition_year[k], k))
 
@@ -681,7 +914,7 @@ def prepare_real_data(df: pd.DataFrame, cross_series_only: bool) -> RealData:
         author_first_year,
         work_first_year,
     )
-    real_targets = build_real_targets(df)
+    real_targets = build_real_targets(selected_df)
     work_to_authors = build_work_to_authors(df)
     eligible_authored = build_eligible_authored_works(
         sorted_keys, edition_year, work_first_year, work_to_authors
@@ -720,7 +953,7 @@ def prepare_real_data(df: pd.DataFrame, cross_series_only: bool) -> RealData:
     observed = summarize_pairs(obs_stats)
 
     real_author_works: dict[str, dict[str, set[str]]] = {ek: {} for ek in sorted_keys}
-    for ek, grp in df[df["author_id"].notna()].groupby("edition_key"):
+    for ek, grp in selected_df[selected_df["author_id"].notna()].groupby("edition_key"):
         real_author_works[ek] = {
             str(aid): set(g["work_id"].astype(str))
             for aid, g in grp.groupby("author_id")
@@ -734,8 +967,10 @@ def prepare_real_data(df: pd.DataFrame, cross_series_only: bool) -> RealData:
         for ek in sorted_keys
     }
 
+    rank_frame = frequency_df if frequency_df is not None else df
     return RealData(
         sorted_keys=sorted_keys,
+        edition_year=edition_year,
         real_targets=real_targets,
         elig_by_author=elig_by_author,
         eligible_authored=eligible_authored,
@@ -749,8 +984,8 @@ def prepare_real_data(df: pd.DataFrame, cross_series_only: bool) -> RealData:
         observed=observed,
         obs_zero_share=obs_zero_share,
         n_pairs=len(obs_stats),
-        work_freq=compute_work_frequency(df),
-        author_freq=compute_author_frequency(df),
+        work_freq=compute_work_frequency(rank_frame),
+        author_freq=compute_author_frequency(rank_frame),
     )
 
 
@@ -761,19 +996,35 @@ def simulate_model(
     rng: np.random.Generator,
     rank_by: str,
     decouple: bool = False,
+    phantom_scope: str = "private",
 ) -> dict[str, np.ndarray]:
     """Run one model config for n_trials against the real edition shapes."""
+    if cfg.family == "canon":
+        within_alpha, author_gamma = 0.0, cfg.alpha
+    elif cfg.family == "mixed":
+        within_alpha, author_gamma = cfg.alpha, cfg.gamma
+    elif cfg.family == "author":
+        within_alpha, author_gamma = cfg.alpha, 0.0
+    else:
+        within_alpha, author_gamma = 0.0, 0.0
+
     fixed_corpus_ranks = fixed_global_ranks = fixed_author_ranks = None
     if rank_by == "frequency":
-        fixed_corpus_ranks = draw_author_corpus_ranks(
-            data.author_to_all_works, rng, "frequency", data.work_freq
-        )
+        if within_alpha > 0:
+            fixed_corpus_ranks = draw_author_corpus_ranks(
+                data.author_to_all_works,
+                rng,
+                "frequency",
+                data.work_freq,
+                cfg.lam,
+            )
         fixed_global_ranks = draw_global_work_ranks(
             data.global_works, rng, "frequency", data.work_freq
         )
-        fixed_author_ranks = draw_author_pool_ranks(
-            data.all_author_ids, rng, "frequency", data.author_freq
-        )
+        if author_gamma > 0:
+            fixed_author_ranks = draw_author_pool_ranks(
+                data.all_author_ids, rng, "frequency", data.author_freq
+            )
 
     arrays = {k: np.empty(n_trials) for k in ("rate", "diff", "ja", "jw", "zero")}
     print(f"Running {cfg.label}: {n_trials:,} trials", end="", flush=True)
@@ -782,13 +1033,13 @@ def simulate_model(
             print(".", end="", flush=True)
 
         sims: dict[str, SimulatedEdition] = {}
-        if cfg.family in ("author", "canon"):
-            alpha = cfg.alpha if cfg.family == "author" else 0.0
-            gamma = cfg.alpha if cfg.family == "canon" else 0.0
+        if cfg.family in ("author", "canon", "mixed"):
+            alpha = within_alpha
+            gamma = author_gamma
             corpus_ranks = None
             if alpha > 0:
                 corpus_ranks = fixed_corpus_ranks or draw_author_corpus_ranks(
-                    data.author_to_all_works, rng, "random"
+                    data.author_to_all_works, rng, "random", lam=cfg.lam
                 )
             author_ranks = None
             if gamma > 0:
@@ -808,6 +1059,7 @@ def simulate_model(
                     lam=cfg.lam,
                     phantom_prefix=ek,
                     decouple=decouple,
+                    phantom_scope=phantom_scope,
                 )
         else:
             global_ranks = None
@@ -896,7 +1148,13 @@ def run_real_mode(
     dists: dict[str, dict[str, np.ndarray]] = {}
     for cfg in configs:
         arrays = simulate_model(
-            cfg, data, args.n, rng, args.rank_by, args.decouple_allocation
+            cfg,
+            data,
+            args.n,
+            rng,
+            args.rank_by,
+            args.decouple_allocation,
+            getattr(args, "phantom_scope", "private"),
         )
         rows.append(model_row(cfg, data, arrays, args.n))
         dists[cfg.label] = arrays
@@ -966,7 +1224,6 @@ def _print_stat_lines(r) -> None:
 
 
 FIT_STATS = (
-    "jaccard_diff",
     "jaccard_authors",
     "jaccard_works",
     "rate_a_gt_w",
@@ -975,7 +1232,7 @@ FIT_STATS = (
 
 
 def fit_objective(row: dict) -> float:
-    """RMS z across the five fitted statistics (lower = closer joint fit)."""
+    """Legacy marginal-z RMS across four non-redundant fitted statistics."""
     zs = np.clip([row[f"{s}_z"] for s in FIT_STATS], -1e6, 1e6)
     return float(np.sqrt(np.mean(np.square(zs))))
 
@@ -983,22 +1240,33 @@ def fit_objective(row: dict) -> float:
 def run_fit_mode(
     data: RealData, args: argparse.Namespace, rng: np.random.Generator
 ) -> pd.DataFrame:
-    """Grid-search (γ, λ) for author-canon against all five observed stats.
+    """Grid-search (γ, λ) for author-canon against four independent targets.
 
     γ=0 cells are the uniform-author (author-first) model with inflation λ,
     so the grid nests the plain author-first null as its origin cell."""
     rows: list[dict] = []
+    obs_vector = fit_stat_vector(data.observed, data.obs_zero_share)
     for lam in args.lambdas:
         for gamma in args.gammas:
             cfg = ModelConfig(
                 f"author-canon γ={gamma:g}, λ={lam:g}", "canon", gamma, lam
             )
             arrays = simulate_model(
-                cfg, data, args.fit_trials, rng, args.rank_by, args.decouple_allocation
+                cfg,
+                data,
+                args.fit_trials,
+                rng,
+                args.rank_by,
+                args.decouple_allocation,
+                getattr(args, "phantom_scope", "private"),
             )
             row = model_row(cfg, data, arrays, args.fit_trials)
             row["gamma"] = gamma
             row["rms_z"] = fit_objective(row)
+            sim_matrix = fit_sim_matrix(arrays)
+            row["joint_rms"] = joint_fit_score(obs_vector, sim_matrix)
+            row["synthetic_nll"] = synthetic_likelihood_score(obs_vector, sim_matrix)
+            row["joint_p"] = joint_predictive_p(obs_vector, sim_matrix)
             rows.append(row)
     return pd.DataFrame(rows)
 
@@ -1006,7 +1274,7 @@ def run_fit_mode(
 def print_fit_report(fit: pd.DataFrame, args: argparse.Namespace) -> None:
     print()
     print("===== JOINT (γ, λ) FIT: author-canon with corpus inflation =====")
-    print("RMS z across five statistics (lower = closer joint fit);")
+    print("Legacy RMS z across four non-redundant statistics;")
     print("rows γ (author-canon concentration), cols λ (corpus inflation):\n")
     pivot = fit.pivot(index="gamma", columns="lam", values="rms_z")
     print(pivot.to_string(float_format=lambda v: f"{v:8.2f}"))
@@ -1394,7 +1662,7 @@ def plot_fit_heatmap(fit: pd.DataFrame, out: Path) -> None:
             )
     cbar = fig.colorbar(im, ax=ax, shrink=0.9)
     cbar.set_label(
-        "RMS z across five statistics (log scale; lower = better)", fontsize=8
+        "Legacy RMS z across four statistics (log scale; lower = better)", fontsize=8
     )
     ax.set_title(
         "Joint fit of the author-canon model with corpus inflation\n"
@@ -1491,6 +1759,13 @@ def main() -> None:
         "check: canon rank no longer buys the larger allocations)",
     )
     parser.add_argument(
+        "--phantom-scope",
+        choices=PHANTOM_SCOPES,
+        default="private",
+        help="whether inflated latent works are edition-private (legacy) or "
+        "shared across editions (credible finite-oeuvre stress test)",
+    )
+    parser.add_argument(
         "--gammas",
         type=_csv_floats,
         default=list(DEFAULT_GAMMAS),
@@ -1520,6 +1795,13 @@ def main() -> None:
         "excluded by default",
     )
     add_root_works_flag(parser)
+    parser.add_argument(
+        "--work-unit",
+        choices=WORK_UNIT_MODES,
+        default=None,
+        help="explicit work estimand: drop excerpts, include them as distinct, or "
+        "coalesce excerpts to parents; overrides the legacy root/excerpt flags",
+    )
     add_save_csv_flag(parser)
     parser.add_argument(
         "--n-authors",
@@ -1579,13 +1861,24 @@ def main() -> None:
         metavar="PATH",
         help=f"fit figure path (default: {OUT_FIT})",
     )
+    parser.add_argument(
+        "--out-fit-csv",
+        type=Path,
+        default=DATA_DIR / "author_work_agreement_models_fit.csv",
+        metavar="PATH",
+        help="fit CSV path used with --save-csv",
+    )
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
 
     data: RealData | None = None
     if args.mode in ("real", "fit", "all"):
-        df = load_divergence_frame(args.only_root_works)
+        df = (
+            load_work_unit_frame(args.work_unit)
+            if args.work_unit is not None
+            else load_divergence_frame(args.only_root_works)
+        )
         data = prepare_real_data(df, not args.include_within_series)
 
     if args.mode in ("real", "all"):
@@ -1606,7 +1899,7 @@ def main() -> None:
         print_fit_report(fit, args)
         plot_fit_heatmap(fit, args.out_fit)
         if args.save_csv:
-            path = DATA_DIR / "author_work_agreement_models_fit.csv"
+            path = args.out_fit_csv
             fit.to_csv(path, index=False)
             print(f"CSV saved → {path}")
 
