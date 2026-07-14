@@ -19,14 +19,23 @@ counts). Works debuting with no subsequent edition in scope are excluded.
 Two tests
 ---------
 1. Pooled comparison — V vs. NV on two metrics (ever-reselected after debut,
-   and per-opportunity reselection rate), each in "all" and "cross-series"
-   scope (the latter ignores later editions of the debut's own series, so
-   NAAAL's recurring vernacular sections can't masquerade as cross-editor
-   agreement). Chi-square, Fisher exact, and two-proportion z tests.
+   and per-opportunity reselection rate), each in "all", "cross-series", and
+   "cross-series, vernacular-containing editions only" scope. The last
+   restricts the opportunity set further than plain cross-series: a later
+   cross-series edition only counts as an opportunity (and a reselection
+   only counts) if that edition itself contains a non-zero number of
+   vernacular works — so an editor's cross-series pickup of a V/NV work in an
+   edition with zero vernacular content never enters the comparison. Every
+   scope excludes later editions of the debut's own series, so NAAAL's
+   recurring vernacular sections can't masquerade as cross-editor agreement.
+   Chi-square, Fisher exact, and two-proportion z tests. A dedicated report
+   section compares the vernacular-editions-only estimate against the full
+   cross-series estimate for the same metric.
 2. Size-matched Monte Carlo — the vernacular rate against the null
    distribution of |V|-sized random samples of NV works, drawn either
    uniformly ("unmatched") or matching V's debut-edition distribution
-   ("stratified", which equalizes reselection opportunities).
+   ("stratified", which equalizes reselection opportunities). Runs for every
+   metric/scope in Test 1, including the vernacular-editions-only scope.
 
 Usage:
     uv run python analysis/vernacular/vernacular_reselection_test.py
@@ -60,6 +69,7 @@ from author_vs_work_debut_reselection import (  # noqa: E402
     _clean_id,
     _rate_stats,
     _safe_div,
+    build_work_rows,
     compute_work_records,
     fmt_p,
     fmt_pct,
@@ -128,6 +138,30 @@ SPECS = [
         num_col="cross_series_reselection_count",
         den_col="cross_series_subsequent_count",
     ),
+    MetricSpec(
+        "ever_cross_series_vern_eds",
+        "Work was reselected at least once in a later different-series edition "
+        "that itself contains a non-zero number of vernacular works",
+        "ever",
+        "vern_cross_series_subsequent_count",
+        flag_col="is_reselected_vern_cross_series",
+    ),
+    MetricSpec(
+        "opportunity_cross_series_vern_eds",
+        "Later different-series opportunities, restricted to editions "
+        "containing a non-zero number of vernacular works, that reselect the "
+        "debut work",
+        "opportunity",
+        "vern_cross_series_subsequent_count",
+        num_col="vern_cross_series_reselection_count",
+        den_col="vern_cross_series_subsequent_count",
+    ),
+]
+
+# (full cross-series metric, vernacular-editions-only restricted metric)
+RESTRICTION_PAIRS = [
+    ("ever_cross_series", "ever_cross_series_vern_eds"),
+    ("opportunity_cross_series", "opportunity_cross_series_vern_eds"),
 ]
 
 
@@ -187,8 +221,128 @@ def build_groups(
         "n_editions_vernacular": len(vern_editions),
         "n_vernacular_works": int((out["group"] == "vernacular").sum()),
         "n_non_vernacular_works": int((out["group"] == "non_vernacular").sum()),
+        "vern_edition_ids": {_clean_id(e) for e in vern_editions},
     }
     return out.reset_index(drop=True), info
+
+
+def compute_vern_cross_series_records(
+    raw: pd.DataFrame, all_editions: pd.DataFrame, vern_edition_ids: set[str]
+) -> pd.DataFrame:
+    """Work-level cross-series opportunity/reselection counts restricted to
+    later editions that themselves contain a non-zero number of vernacular
+    works (``vern_edition_ids``, from ``build_groups``' ``info``).
+
+    Mirrors the cross-series columns ``author_vs_work_debut_reselection``'s
+    ``compute_entity_records`` produces, but a later cross-series edition
+    only contributes an opportunity — and only counts as a reselection — if
+    it belongs to ``vern_edition_ids``. An edition with zero vernacular
+    selections drops out of both numerator and denominator entirely.
+    """
+    empty_cols = [
+        "work_key",
+        "vern_cross_series_subsequent_count",
+        "vern_cross_series_reselection_count",
+        "is_reselected_vern_cross_series",
+    ]
+
+    work_rows = build_work_rows(raw)
+    ed_lookup = all_editions[["edition_id", "edition_order", "entry_group"]].copy()
+    ed_lookup["edition_id_key"] = ed_lookup["edition_id"].map(_clean_id)
+    vern_orders = set(
+        ed_lookup.loc[
+            ed_lookup["edition_id_key"].isin(vern_edition_ids), "edition_order"
+        ]
+    )
+
+    appearances = (
+        work_rows[["work_id", "edition_id", "entry_group"]]
+        .dropna(subset=["work_id", "edition_id"])
+        .drop_duplicates(["work_id", "edition_id"])
+        .merge(ed_lookup[["edition_id", "edition_order"]], on="edition_id", how="inner")
+        .sort_values(["work_id", "edition_order", "edition_id"], kind="mergesort")
+        .reset_index(drop=True)
+    )
+    if appearances.empty:
+        return pd.DataFrame(columns=empty_cols)
+
+    debut = (
+        appearances.groupby("work_id", sort=False)
+        .first()
+        .reset_index()
+        .rename(columns={"edition_order": "debut_order", "entry_group": "debut_group"})[
+            ["work_id", "debut_order", "debut_group"]
+        ]
+    )
+
+    appearance_orders = (
+        appearances.groupby("work_id")["edition_order"].apply(list).to_dict()
+    )
+    appearance_groups = (
+        appearances.groupby("work_id")["entry_group"].apply(list).to_dict()
+    )
+    all_orders = all_editions["edition_order"].to_numpy(dtype=int)
+    all_groups_by_order = all_editions.set_index("edition_order")[
+        "entry_group"
+    ].to_dict()
+
+    records: list[dict] = []
+    for _, row in debut.iterrows():
+        work_id = row["work_id"]
+        debut_order = int(row["debut_order"])
+        debut_group = row["debut_group"]
+
+        opportunity_orders = {
+            o
+            for o in all_orders
+            if o > debut_order
+            and o in vern_orders
+            and all_groups_by_order.get(o) != debut_group
+        }
+
+        orders = appearance_orders.get(work_id, [])
+        groups = appearance_groups.get(work_id, [])
+        reselected_orders = {
+            order
+            for order, group in zip(orders, groups, strict=False)
+            if order > debut_order and order in vern_orders and group != debut_group
+        }
+
+        records.append(
+            {
+                "work_key": _clean_id(work_id),
+                "vern_cross_series_subsequent_count": len(opportunity_orders),
+                "vern_cross_series_reselection_count": len(reselected_orders),
+                "is_reselected_vern_cross_series": len(reselected_orders) > 0,
+            }
+        )
+
+    return pd.DataFrame(records)
+
+
+def attach_vern_cross_series_records(
+    classified: pd.DataFrame, raw: pd.DataFrame, all_editions: pd.DataFrame, info: dict
+) -> pd.DataFrame:
+    """Merge ``compute_vern_cross_series_records`` output onto ``classified``.
+
+    A left join: every classified work has an appearance row in ``raw``, so
+    missing matches only arise in degenerate/test fixtures, where they're
+    filled to "no opportunity" rather than left as NaN.
+    """
+    records = compute_vern_cross_series_records(
+        raw, all_editions, info["vern_edition_ids"]
+    )
+    out = classified.merge(records, on="work_key", how="left")
+    out["vern_cross_series_subsequent_count"] = (
+        out["vern_cross_series_subsequent_count"].fillna(0).astype(int)
+    )
+    out["vern_cross_series_reselection_count"] = (
+        out["vern_cross_series_reselection_count"].fillna(0).astype(int)
+    )
+    out["is_reselected_vern_cross_series"] = (
+        out["is_reselected_vern_cross_series"].fillna(False).astype(bool)
+    )
+    return out
 
 
 def metric_counts(frame: pd.DataFrame, spec: MetricSpec) -> tuple[int, int]:
@@ -461,6 +615,45 @@ def print_comparison(comparison: pd.DataFrame) -> None:
         )
 
 
+def print_restriction_comparison(comparison: pd.DataFrame) -> None:
+    """Report each vernacular-editions-only restricted metric against its
+    full cross-series counterpart, and the change in the V-NV rate
+    difference between the two."""
+    print("\n===== TEST 1b: VERNACULAR-EDITIONS-ONLY vs FULL CROSS-SERIES =====")
+    print(
+        "  Vernacular-editions-only: opportunities (and reselections) only\n"
+        "  count when the later cross-series edition itself contains a\n"
+        "  non-zero number of vernacular works."
+    )
+    by_metric = comparison.set_index("metric")
+    for full_name, restricted_name in RESTRICTION_PAIRS:
+        if full_name not in by_metric.index or restricted_name not in by_metric.index:
+            continue
+        full = by_metric.loc[full_name]
+        restricted = by_metric.loc[restricted_name]
+        print(f"\n  {restricted_name} vs {full_name}")
+        print(
+            f"    Full cross-series:        "
+            f"V={fmt_pct(full['vernacular_rate'])} (n={int(full['vernacular_n'])})  "
+            f"NV={fmt_pct(full['non_vernacular_rate'])} (n={int(full['non_vernacular_n'])})  "
+            f"diff={fmt_pct(full['rate_difference'])}  "
+            f"chi2 p={fmt_p(full['chi2_p'])}"
+        )
+        print(
+            f"    Vernacular-editions-only:  "
+            f"V={fmt_pct(restricted['vernacular_rate'])} (n={int(restricted['vernacular_n'])})  "
+            f"NV={fmt_pct(restricted['non_vernacular_rate'])} (n={int(restricted['non_vernacular_n'])})  "
+            f"diff={fmt_pct(restricted['rate_difference'])}  "
+            f"chi2 p={fmt_p(restricted['chi2_p'])}"
+        )
+        delta = restricted["rate_difference"] - full["rate_difference"]
+        print(
+            f"    Change in (V-NV) diff from restricting to vernacular-containing "
+            f"editions: {fmt_pct(delta)}"
+        )
+    print()
+
+
 def print_monte_carlo(mc: pd.DataFrame, n_draws: int, seed: int) -> None:
     print(
         f"\n===== TEST 2: SIZE-MATCHED MONTE CARLO "
@@ -477,7 +670,7 @@ def print_monte_carlo(mc: pd.DataFrame, n_draws: int, seed: int) -> None:
             else ""
         )
         print(
-            f"  {row['metric']:<26} {row['mode']:<11} "
+            f"  {row['metric']:<34} {row['mode']:<11} "
             f"obs={fmt_pct(row['vernacular_rate'])}  "
             f"null={fmt_pct(row['null_mean'])} ± {fmt_pct(row['null_sd'])}  "
             f"z={fmt_z(row['z_score'])}  "
@@ -519,11 +712,13 @@ def main() -> None:
     work_records = compute_work_records(raw, all_editions)
 
     classified, info = build_groups(page_df, ranges, work_records)
+    classified = attach_vern_cross_series_records(classified, raw, all_editions, info)
     comparison = build_comparison(classified)
     mc = build_monte_carlo(classified, args.n, args.seed)
 
     print_groups(info, args.only_root_works)
     print_comparison(comparison)
+    print_restriction_comparison(comparison)
     print_monte_carlo(mc, args.n, args.seed)
 
     if args.save_csv:
@@ -550,6 +745,9 @@ def main() -> None:
                 "cross_series_subsequent_count",
                 "cross_series_reselection_count",
                 "is_reselected_cross_series",
+                "vern_cross_series_subsequent_count",
+                "vern_cross_series_reselection_count",
+                "is_reselected_vern_cross_series",
                 "n_appearances",
             ]
         ].to_csv(OUT_WORKS, index=False)

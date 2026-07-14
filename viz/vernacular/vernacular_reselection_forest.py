@@ -5,8 +5,9 @@ Forest plot of vernacular work reselection rates against size-matched
 non-vernacular Monte Carlo nulls.
 
 Reuses the estimates computed by
-analysis/vernacular/vernacular_reselection_test.py: for each of the four
-metrics (ever-reselected / per-opportunity × all / cross-series scope) the
+analysis/vernacular/vernacular_reselection_test.py: for each of the six
+metrics (ever-reselected / per-opportunity × all / cross-series / cross-series
+restricted to later editions that themselves contain vernacular works) the
 observed vernacular rate (95% Wilson CI) is drawn over the null distribution
 of |V|-sized random non-vernacular samples (95% empirical interval), under
 both sampling modes — 'unmatched' (uniform draws) and 'debut-stratified'
@@ -47,6 +48,7 @@ from author_vs_work_debut_reselection import (  # noqa: E402
 from vernacular_reselection_test import (  # noqa: E402
     DEFAULT_N,
     DEFAULT_SEED,
+    attach_vern_cross_series_records,
     build_groups,
     build_monte_carlo,
     fmt_z,
@@ -62,8 +64,10 @@ NULL_MEAN_COLOR = "#666666"
 METRIC_LABELS = {
     "ever_all": "Ever reselected\n(all later editions)",
     "ever_cross_series": "Ever reselected\n(cross-series only)",
+    "ever_cross_series_vern_eds": "Ever reselected\n(cross-series, vernacular editions only)",
     "opportunity_all": "Per-opportunity\n(all later editions)",
     "opportunity_cross_series": "Per-opportunity\n(cross-series only)",
+    "opportunity_cross_series_vern_eds": "Per-opportunity\n(cross-series, vernacular editions only)",
 }
 MODE_LABELS = {"unmatched": "unmatched null", "stratified": "debut-stratified null"}
 GROUP_GAP = 0.8  # extra vertical space between metric groups
@@ -74,7 +78,7 @@ def plot(mc: pd.DataFrame, vern_works: int, n_draws: int, out: Path) -> None:
         print("No Monte Carlo results to plot (a group is empty in every metric).")
         return
 
-    fig, ax = plt.subplots(figsize=(11, 7))
+    fig, ax = plt.subplots(figsize=(11, 1.75 * len(METRIC_LABELS)))
 
     rows = mc.set_index(["metric", "mode"])
     y_positions: list[float] = []
@@ -261,6 +265,7 @@ def main() -> None:
     work_records = compute_work_records(raw, all_editions)
 
     classified, info = build_groups(page_df, ranges, work_records)
+    classified = attach_vern_cross_series_records(classified, raw, all_editions, info)
     mc = build_monte_carlo(classified, args.n, args.seed)
 
     plot(mc, info["n_vernacular_works"], args.n, args.out)

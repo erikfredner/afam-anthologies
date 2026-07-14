@@ -18,14 +18,18 @@ from author_vs_work_debut_reselection import (  # noqa: E402
     compute_work_records,
 )
 from vernacular_reselection_test import (  # noqa: E402
+    RESTRICTION_PAIRS,
     SPECS,
+    attach_vern_cross_series_records,
     build_comparison,
     build_groups,
     build_monte_carlo,
     comparison_row,
+    compute_vern_cross_series_records,
     empirical_two_sided_p,
     metric_counts,
     monte_carlo,
+    print_restriction_comparison,
     run_rng,
     sample_indices,
 )
@@ -74,6 +78,9 @@ def make_classified(rows: list[dict]) -> pd.DataFrame:
         "cross_series_subsequent_count": 1,
         "cross_series_reselection_count": 0,
         "is_reselected_cross_series": False,
+        "vern_cross_series_subsequent_count": 1,
+        "vern_cross_series_reselection_count": 0,
+        "is_reselected_vern_cross_series": False,
         "debut_edition_id": 1,
     }
     return pd.DataFrame([{**defaults, **row} for row in rows])
@@ -393,3 +400,129 @@ def test_build_groups_warns_on_unknown_volume(capsys):
         capsys.readouterr().out
     )
     assert info["n_editions_vernacular"] == 1
+
+
+# ── vernacular-editions-only cross-series restriction ───────────────────────
+
+
+def test_build_groups_exposes_vern_edition_ids():
+    page_df = make_page_df(
+        [{"volume_id": 10, "edition_id": 1, "work_id": 1, "toc_page": 5}]
+    )
+    ranges = pd.DataFrame(
+        [
+            {
+                "edition_title": "E1",
+                "volume_id": 10,
+                "slot": None,
+                "page_start": 1,
+                "page_end": 10,
+            }
+        ]
+    )
+    work_records = make_work_records(
+        [{"work_id": 1, "edition_id": 1, "anthology_publication_year": 2000}]
+    )
+    _, info = build_groups(page_df, ranges, work_records)
+    assert info["vern_edition_ids"] == {"1"}
+
+
+def test_compute_vern_cross_series_records_restricts_to_vern_editions():
+    """Work 1 debuts at edition 1 and is reselected at editions 2 and 3, but
+    not edition 4. Editions 2 and 4 are vernacular-containing (edition 3 is
+    not). Restricted opportunities should only count editions 2 and 4 (2
+    opportunities), and only edition 2 as a reselection."""
+    raw = pd.DataFrame(
+        [
+            {"work_id": 1, "edition_id": 1, "anthology_publication_year": 2000},
+            {"work_id": 1, "edition_id": 2, "anthology_publication_year": 2005},
+            {"work_id": 1, "edition_id": 3, "anthology_publication_year": 2010},
+            {"work_id": 2, "edition_id": 4, "anthology_publication_year": 2015},
+        ]
+    )
+    raw = add_entry_group(raw)
+    all_editions = build_edition_table(raw)
+
+    records = compute_vern_cross_series_records(raw, all_editions, {"2", "4"})
+    row = records.set_index("work_key").loc["1"]
+
+    assert row["vern_cross_series_subsequent_count"] == 2
+    assert row["vern_cross_series_reselection_count"] == 1
+    assert bool(row["is_reselected_vern_cross_series"])
+
+
+def test_compute_vern_cross_series_records_no_vern_editions_after_debut():
+    """A work whose only later editions are non-vernacular gets zero
+    restricted opportunities, not a division-time error."""
+    raw = pd.DataFrame(
+        [
+            {"work_id": 1, "edition_id": 1, "anthology_publication_year": 2000},
+            {"work_id": 1, "edition_id": 2, "anthology_publication_year": 2005},
+        ]
+    )
+    raw = add_entry_group(raw)
+    all_editions = build_edition_table(raw)
+
+    records = compute_vern_cross_series_records(raw, all_editions, {"99"})
+    row = records.set_index("work_key").loc["1"]
+
+    assert row["vern_cross_series_subsequent_count"] == 0
+    assert row["vern_cross_series_reselection_count"] == 0
+    assert not bool(row["is_reselected_vern_cross_series"])
+
+
+def test_attach_vern_cross_series_records_fills_missing_with_zero():
+    """A classified work absent from the raw appearance table (degenerate/
+    test-only case) gets 0/False rather than NaN after the left join."""
+    raw = pd.DataFrame(
+        [{"work_id": 1, "edition_id": 1, "anthology_publication_year": 2000}]
+    )
+    raw = add_entry_group(raw)
+    all_editions = build_edition_table(raw)
+    classified = pd.DataFrame([{"work_key": "999", "group": "non_vernacular"}])
+
+    out = attach_vern_cross_series_records(
+        classified, raw, all_editions, {"vern_edition_ids": {"1"}}
+    )
+
+    assert out.loc[0, "vern_cross_series_subsequent_count"] == 0
+    assert out.loc[0, "vern_cross_series_reselection_count"] == 0
+    assert out.loc[0, "is_reselected_vern_cross_series"] == False  # noqa: E712
+
+
+def test_spec_by_name_includes_vern_eds_metrics():
+    assert "ever_cross_series_vern_eds" in SPEC_BY_NAME
+    assert "opportunity_cross_series_vern_eds" in SPEC_BY_NAME
+    assert RESTRICTION_PAIRS == [
+        ("ever_cross_series", "ever_cross_series_vern_eds"),
+        ("opportunity_cross_series", "opportunity_cross_series_vern_eds"),
+    ]
+
+
+def test_print_restriction_comparison_reports_both_scopes(capsys):
+    classified = make_classified(
+        [
+            {
+                "group": "vernacular",
+                "is_reselected_cross_series": True,
+                "cross_series_reselection_count": 1,
+                "is_reselected_vern_cross_series": False,
+                "vern_cross_series_reselection_count": 0,
+            }
+        ]
+        * 4
+        + [
+            {
+                "group": "non_vernacular",
+                "is_reselected_cross_series": False,
+                "is_reselected_vern_cross_series": False,
+            }
+        ]
+        * 4
+    )
+    comparison = build_comparison(classified)
+    print_restriction_comparison(comparison)
+    out = capsys.readouterr().out
+    assert "TEST 1b" in out
+    assert "opportunity_cross_series_vern_eds vs opportunity_cross_series" in out
+    assert "Change in (V-NV) diff" in out
