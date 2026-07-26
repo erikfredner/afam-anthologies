@@ -17,10 +17,12 @@ Editions published in the same year (e.g. the three 1968 anthologies) have no
 real editorial "earlier -> later" relationship, so neither ordering is picked
 via an arbitrary edition_id tiebreak. Both permutations are computed instead
 (each edition's own roster as its own denominator) and plotted as a distinct
-"same-year" category — excluded from the directional retention statistics
-and the labeled callouts, since those describe genuine chronological
-reselection. Six specific edition pairs are labeled directly on the plot
-(see CALLOUT_PAIRS), rather than choosing points algorithmically.
+"same-year" category, excluded from the directional retention statistic
+printed to stdout, since that describes genuine chronological reselection.
+Six specific edition pairs are labeled directly on the plot (see
+CALLOUT_PAIRS), rather than choosing points algorithmically; two of them are
+same-year comparisons, and for those only the permutation written in
+CALLOUT_PAIRS is labeled — its twin sits unlabeled nearby.
 
 Usage:
     uv run python viz/reselection/edition_pair_retention_scatter.py
@@ -75,6 +77,16 @@ GRID_KW = dict(alpha=0.25, linestyle=":")
 CROSS_SERIES_COLOR = "#2a78d6"  # slot 1, blue
 SAME_SERIES_COLOR = "#1baf7a"  # slot 2, aqua
 SAME_YEAR_COLOR = "#eda100"  # slot 3, yellow
+
+# Category is encoded by color + shape only: every series uses the same solid
+# fill, marker area, and opacity, so fill/outline/size carry no meaning. The
+# hairline white edge is applied identically to all three and exists only to
+# keep opaque markers separable where the cloud is dense.
+MARKER_SIZE = 32
+MARKER_KW = dict(alpha=1.0, linewidths=0.4, edgecolors="white")
+CROSS_SERIES_MARKER = "o"
+SAME_SERIES_MARKER = "s"
+SAME_YEAR_MARKER = "^"
 
 # Arrows use mathtext so they render independent of Helvetica's glyph coverage
 # (Helvetica lacks ←/→ and per-glyph fallback does not engage for it).
@@ -234,40 +246,38 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
     same = chrono[chrono["same_series"]]
     same_year = pairs[pairs["same_year"]]
 
-    ax.scatter(
+    # Rarer categories are drawn last so the 300-odd opaque cross-series points
+    # cannot bury them; z-order carries no meaning beyond that. Handles are
+    # kept so the legend can stay in the logical order regardless.
+    h_cross = ax.scatter(
         100 * cross["work_retention"],
         100 * cross["author_retention"],
         color=CROSS_SERIES_COLOR,
-        marker="o",
-        s=28,
-        alpha=0.65,
+        marker=CROSS_SERIES_MARKER,
+        s=MARKER_SIZE,
         label=f"Cross-series pairs (N={len(cross)})",
-        zorder=3,
+        zorder=2,
+        **MARKER_KW,
     )
-    ax.scatter(
-        100 * same["work_retention"],
-        100 * same["author_retention"],
-        facecolors="none",
-        edgecolors=SAME_SERIES_COLOR,
-        linewidths=1.4,
-        marker="s",
-        s=34,
-        alpha=0.95,
-        label=f"Same-series pairs (N={len(same)})",
-        zorder=3,
-    )
-    ax.scatter(
+    h_same_year = ax.scatter(
         100 * same_year["work_retention"],
         100 * same_year["author_retention"],
-        facecolors="none",
-        edgecolors=SAME_YEAR_COLOR,
-        linewidths=1.4,
-        marker="^",
-        s=40,
-        alpha=0.9,
-        linestyle="--",
+        color=SAME_YEAR_COLOR,
+        marker=SAME_YEAR_MARKER,
+        s=MARKER_SIZE,
         label=f"Same-year pairs, both directions (N={len(same_year)})",
-        zorder=2,
+        zorder=3,
+        **MARKER_KW,
+    )
+    h_same = ax.scatter(
+        100 * same["work_retention"],
+        100 * same["author_retention"],
+        color=SAME_SERIES_COLOR,
+        marker=SAME_SERIES_MARKER,
+        s=MARKER_SIZE,
+        label=f"Same-series pairs (N={len(same)})",
+        zorder=4,
+        **MARKER_KW,
     )
 
     lim = 100 * max(pairs["work_retention"].max(), pairs["author_retention"].max())
@@ -304,7 +314,12 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
     ax.set_xlabel(X_AXIS_LABEL, fontsize=11)
     ax.set_ylabel(Y_AXIS_LABEL, fontsize=11)
     ax.set_title("Author vs. work retention across all edition pairs", fontsize=12)
-    legend = ax.legend(frameon=False, fontsize=9, loc="lower right")
+    legend = ax.legend(
+        handles=[h_cross, h_same, h_same_year],
+        frameon=False,
+        fontsize=9,
+        loc="lower right",
+    )
     ax.grid(True, **GRID_KW)
     ax.set_aspect("equal")
 
