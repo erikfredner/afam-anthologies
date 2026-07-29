@@ -39,6 +39,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 from adjustText import adjust_text
+from matplotlib.ticker import PercentFormatter
 
 from afam.cli import add_root_works_flag
 from afam.editions import EDITION_LABELS
@@ -92,11 +93,11 @@ SAME_YEAR_MARKER = "^"
 # (Helvetica lacks ←/→ and per-glyph fallback does not engage for it).
 X_AXIS_LABEL = (
     r"$\leftarrow$ fewer works reselected          "
-    r"more works reselected $\rightarrow$   (%)"
+    r"more works reselected $\rightarrow$"
 )
 Y_AXIS_LABEL = (
     r"$\leftarrow$ fewer authors reselected          "
-    r"more authors reselected $\rightarrow$   (%)"
+    r"more authors reselected $\rightarrow$"
 )
 
 # Specific edition pairs to call out, as (earlier_edition_id, later_edition_id)
@@ -313,7 +314,9 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
     ax.set_ylim(-2, lim)
     ax.set_xlabel(X_AXIS_LABEL, fontsize=11)
     ax.set_ylabel(Y_AXIS_LABEL, fontsize=11)
-    ax.set_title("Author vs. work retention across all edition pairs", fontsize=12)
+    # Units live on the tick labels ("100%") rather than in the axis titles.
+    ax.xaxis.set_major_formatter(PercentFormatter(xmax=100, decimals=0))
+    ax.yaxis.set_major_formatter(PercentFormatter(xmax=100, decimals=0))
     legend = ax.legend(
         handles=[h_cross, h_same, h_same_year],
         frameon=False,
