@@ -16,6 +16,7 @@ from author_vs_work_debut_reselection import (  # noqa: E402
 from edition_pair_retention_scatter import (  # noqa: E402
     callout_pair_index,
     compute_pair_retention,
+    drop_unauthored_works,
 )
 
 
@@ -130,6 +131,73 @@ def test_callout_pair_index_raises_for_missing_pair(pairs: pd.DataFrame):
 
 def test_all_distinct_years_have_no_same_year_rows(pairs: pd.DataFrame):
     assert not pairs["same_year"].any()
+
+
+@pytest.fixture
+def unauthored_raw() -> tuple[pd.DataFrame, pd.DataFrame]:
+    # w2 is anonymous (no author row) and appears in both editions; every
+    # other work carries an author. Edition 1 holds {w1, w2}, edition 2 holds
+    # {w2, w3}, so keeping w2 makes work retention 1/2 while author retention
+    # is 0/1 — dropping it moves work retention to 0/1.
+    return make_raw(
+        [
+            {
+                "work_id": "w1",
+                "author_id": "a1",
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+            },
+            {
+                "work_id": "w2",
+                "author_id": None,
+                "edition_id": 1,
+                "anthology_publication_year": 2000,
+            },
+            {
+                "work_id": "w2",
+                "author_id": None,
+                "edition_id": 2,
+                "anthology_publication_year": 2005,
+            },
+            {
+                "work_id": "w3",
+                "author_id": "a3",
+                "edition_id": 2,
+                "anthology_publication_year": 2005,
+            },
+        ]
+    )
+
+
+def test_drop_unauthored_works_removes_only_null_author_rows(
+    unauthored_raw: tuple[pd.DataFrame, pd.DataFrame],
+):
+    raw, _ = unauthored_raw
+    filtered = drop_unauthored_works(raw)
+
+    assert set(filtered["work_id"]) == {"w1", "w3"}
+    assert filtered["author_id"].notna().all()
+    # The original frame is left untouched.
+    assert set(raw["work_id"]) == {"w1", "w2", "w3"}
+
+
+def test_unauthored_works_inflate_work_retention_only(
+    unauthored_raw: tuple[pd.DataFrame, pd.DataFrame],
+):
+    raw, editions = unauthored_raw
+
+    with_unauthored = compute_pair_retention(raw, editions).set_index(
+        ["earlier_edition_id", "later_edition_id"]
+    )
+    assert with_unauthored.loc[(1, 2), "work_retention"] == pytest.approx(0.5)
+    assert with_unauthored.loc[(1, 2), "author_retention"] == pytest.approx(0.0)
+
+    authored_only = compute_pair_retention(
+        drop_unauthored_works(raw), editions
+    ).set_index(["earlier_edition_id", "later_edition_id"])
+    assert authored_only.loc[(1, 2), "work_retention"] == pytest.approx(0.0)
+    # Author retention is unchanged: unauthored works contribute no authors.
+    assert authored_only.loc[(1, 2), "author_retention"] == pytest.approx(0.0)
 
 
 @pytest.fixture

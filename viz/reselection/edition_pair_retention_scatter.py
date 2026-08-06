@@ -24,9 +24,19 @@ CALLOUT_PAIRS), rather than choosing points algorithmically; two of them are
 same-year comparisons, and for those only the permutation written in
 CALLOUT_PAIRS is labeled — its twin sits unlabeled nearby.
 
+A variant that drops works with no author on record (anonymous spirituals,
+folk material, unsigned periodical pieces) is available via
+--authored-works-only, written to a separate output file. Those works can
+never contribute to author retention — they have no author to reselect — so
+including them puts entities in the work denominator that are structurally
+absent from the author denominator. The variant is the sensitivity check on
+whether the author-over-work gap survives restricting both axes to the same
+authored material.
+
 Usage:
     uv run python viz/reselection/edition_pair_retention_scatter.py
     uv run python viz/reselection/edition_pair_retention_scatter.py --include-excerpts
+    uv run python viz/reselection/edition_pair_retention_scatter.py --authored-works-only
 """
 
 from __future__ import annotations
@@ -64,6 +74,8 @@ plt.rcParams["mathtext.it"] = "Helvetica Now Micro:italic"
 plt.rcParams["mathtext.bf"] = "Helvetica Now Micro:bold"
 
 OUT_FILE = OUTPUT_DIR / "edition_pair_retention_scatter.png"
+# --authored-works-only writes here instead, so both variants coexist.
+OUT_FILE_AUTHORED = OUTPUT_DIR / "edition_pair_retention_scatter_authored_only.png"
 # Vector variants emitted alongside the PNG for print/typesetting. PDF (not
 # EPS) so the points' alpha transparency is preserved — the EPS/PostScript
 # backend renders partially transparent artists opaque.
@@ -118,6 +130,17 @@ CALLOUT_PAIRS: list[tuple[int, int]] = [
 _MATHTEXT_SPECIAL = "\\#$%_{}~^"
 # Trailing edition designator (e.g. "ed.2") kept upright, outside the italics.
 _ED_SUFFIX = re.compile(r"\s+(ed\.\d+)$")
+
+
+def drop_unauthored_works(raw: pd.DataFrame) -> pd.DataFrame:
+    """Drop appearances of works with no author on record.
+
+    ``raw`` carries one row per (work, author, edition) from a LEFT JOIN onto
+    the authors tables, so a work with no author appears as a single row with a
+    null ``author_id``. Dropping null-author rows therefore removes exactly the
+    unauthored works and leaves every authored work's rows intact.
+    """
+    return raw[raw["author_id"].notna()].copy()
 
 
 def _entity_sets(df: pd.DataFrame, id_col: str) -> dict[object, set]:
@@ -351,9 +374,27 @@ def main() -> None:
         description="Scatter author vs work retention for every ordered edition pair."
     )
     add_root_works_flag(parser)
+    parser.add_argument(
+        "--authored-works-only",
+        action="store_true",
+        help=(
+            "Exclude works with no author on record, and write the variant "
+            f"figure to {OUT_FILE_AUTHORED.name}."
+        ),
+    )
     args = parser.parse_args()
 
     raw, editions = load_data(args.only_root_works)
+    if args.authored_works_only:
+        before = raw["work_id"].nunique()
+        raw = drop_unauthored_works(raw)
+        after = raw["work_id"].nunique()
+        print(
+            f"Authored-works-only scope: dropped {before - after} of {before} "
+            f"works with no author on record ({after} remain)."
+        )
+    out_file = OUT_FILE_AUTHORED if args.authored_works_only else OUT_FILE
+
     pairs = compute_pair_retention(raw, editions)
 
     chrono = pairs[~pairs["same_year"]]
@@ -369,7 +410,7 @@ def main() -> None:
             "separately; excluded from the stat above."
         )
 
-    plot(pairs, OUT_FILE)
+    plot(pairs, out_file)
 
 
 if __name__ == "__main__":
