@@ -19,10 +19,14 @@ via an arbitrary edition_id tiebreak. Both permutations are computed instead
 (each edition's own roster as its own denominator) and plotted as a distinct
 "same-year" category, excluded from the directional retention statistic
 printed to stdout, since that describes genuine chronological reselection.
-Six specific edition pairs are labeled directly on the plot (see
-CALLOUT_PAIRS), rather than choosing points algorithmically; two of them are
-same-year comparisons, and for those only the permutation written in
-CALLOUT_PAIRS is labeled — its twin sits unlabeled nearby.
+Seven specific edition pairs are labeled directly on the plot (see
+CALLOUT_PAIRS), rather than choosing points algorithmically. Three of the
+labels are same-year comparisons: both permutations of the 2014 NAAAL ed.3 /
+Wiley Blackwell pair are labeled, so the gap between reading that pair in
+either direction is visible; the 1971 Cavalcade / Black Lit. in America pair
+is labeled in one direction only, its twin sitting unlabeled nearby. Labels
+name the direction as "denominator -> comparison", since for a same-year pair
+that is the only thing separating the two points.
 
 A variant that drops works with no author on record (anonymous spirituals,
 folk material, unsigned periodical pieces) is available via
@@ -116,12 +120,13 @@ Y_AXIS_LABEL = (
 # — the direction each anthology's roster is normalized against. Final label
 # placement is solved by adjustText, so no manual offsets.
 CALLOUT_PAIRS: list[tuple[int, int]] = [
-    (21, 20),  # Afro-Am. Writing ed.1 & ed.2
-    (13, 18),  # NAAAL ed.3 vs. Wiley Blackwell (both 2014)
-    (16, 60),  # NAAAL ed.1 vs. Call & Response (1997/1998)
-    (54, 59),  # Cavalcade vs. Black Lit. in America (both 1971)
-    (54, 19),  # Cavalcade & New Cavalcade
-    (68, 54),  # Negro Caravan & Cavalcade
+    (21, 20),  # Afro-Am. Writing ed.1 -> ed.2
+    (13, 18),  # NAAAL ed.3 -> Wiley Blackwell (both 2014)
+    (18, 13),  # Wiley Blackwell -> NAAAL ed.3 (the reverse permutation)
+    (16, 60),  # NAAAL ed.1 -> Call & Response (1997/1998)
+    (54, 59),  # Cavalcade -> Black Lit. in America (both 1971)
+    (54, 19),  # Cavalcade -> New Cavalcade
+    (68, 54),  # Negro Caravan -> Cavalcade
 ]
 
 # Mathtext special characters that must be escaped to render literally.
@@ -251,10 +256,17 @@ def _italic_label(label: str) -> str:
 
 
 def _pair_label(row: pd.Series) -> str:
+    """Label a called-out pair as "denominator -> comparison".
+
+    The arrow (not "&") because both permutations of a same-year pair can be
+    labeled at once: the two points differ only in which roster is the
+    denominator, so a symmetric conjunction would leave them indistinguishable.
+    """
     earlier = EDITION_LABELS.get(int(row["earlier_edition_id"]), "?")
     later = EDITION_LABELS.get(int(row["later_edition_id"]), "?")
     return (
-        f"{_italic_label(earlier)} ({row['earlier_year']}) &\n"
+        f"{_italic_label(earlier)} ({row['earlier_year']}) "
+        f"$\\rightarrow$\n"
         f"{_italic_label(later)} ({row['later_year']})"
     )
 
