@@ -37,6 +37,12 @@ absent from the author denominator. The variant is the sensitivity check on
 whether the author-over-work gap survives restricting both axes to the same
 authored material.
 
+Alongside the static figures, an interactive plotly version is written to
+docs/ (tracked, served by GitHub Pages) where hovering any point names both
+anthologies, the direction, and the counts behind each share. That makes every
+point identifiable rather than just the seven callouts, so the HTML carries no
+annotations at all. Only the default scope is published.
+
 Usage:
     uv run python viz/reselection/edition_pair_retention_scatter.py
     uv run python viz/reselection/edition_pair_retention_scatter.py --include-excerpts
@@ -46,15 +52,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import html
 import re
 import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import plotly.graph_objects as go
 from adjustText import adjust_text
 from matplotlib.ticker import PercentFormatter
 
+from afam import DOCS_DIR
 from afam.cli import add_root_works_flag
 from afam.editions import EDITION_LABELS
 from afam.viz_style import OUTPUT_DIR
@@ -86,6 +95,11 @@ OUT_FILE_AUTHORED = OUTPUT_DIR / "edition_pair_retention_scatter_authored_only.p
 OUT_FORMATS = ("png", "svg", "pdf")
 # 600 dpi keeps the raster (PNG) crisp at print sizes.
 SAVE_DPI = 600
+# The interactive sibling lives in docs/ (tracked, served by GitHub Pages) rather
+# than the gitignored output/. Only the default scope is published: the
+# --authored-works-only variant is a sensitivity check on the static figure, not
+# something a reader browses.
+OUT_HTML = DOCS_DIR / "edition_pair_retention_scatter.html"
 GRID_KW = dict(alpha=0.25, linestyle=":")
 
 # Colorblind-safe categorical palette (validated: worst-pair CVD deltaE 47,
@@ -115,6 +129,10 @@ Y_AXIS_LABEL = (
     r"$\leftarrow$ fewer authors reselected          "
     r"more authors reselected $\rightarrow$"
 )
+# Plotly renders axis titles as HTML, where the arrows are ordinary glyphs and
+# the mathtext escaping above would render literally.
+X_AXIS_LABEL_HTML = "← fewer works reselected          more works reselected →"
+Y_AXIS_LABEL_HTML = "← fewer authors reselected          more authors reselected →"
 
 # Specific edition pairs to call out, as (earlier_edition_id, later_edition_id)
 # — the direction each anthology's roster is normalized against. Final label
@@ -173,6 +191,12 @@ def _pair_row(
         "same_year": same_year,
         "work_retention": len(w_e & w_l) / len(w_e),
         "author_retention": len(a_e & a_l) / len(a_e),
+        # The ratios' numerators and denominators, kept so the interactive
+        # tooltip can report the counts a retention share is computed from.
+        "earlier_n_works": len(w_e),
+        "earlier_n_authors": len(a_e),
+        "works_retained": len(w_e & w_l),
+        "authors_retained": len(a_e & a_l),
     }
 
 
@@ -211,6 +235,16 @@ def compute_pair_retention(raw: pd.DataFrame, editions: pd.DataFrame) -> pd.Data
             if same_year and w2 and a2:
                 rows.append(_pair_row(e2, e1, w2, a2, w1, a1, same_year))
     return pd.DataFrame(rows)
+
+
+def _axis_limit(pairs: pd.DataFrame) -> float:
+    """Upper bound (in percentage points) shared by both renderers.
+
+    Kept as one function so the static figure and its interactive sibling
+    cannot drift onto different scales.
+    """
+    lim = 100 * max(pairs["work_retention"].max(), pairs["author_retention"].max())
+    return min(105.0, lim * 1.08 + 2)
 
 
 def _above_share(pairs: pd.DataFrame) -> tuple[int, int]:
@@ -271,6 +305,48 @@ def _pair_label(row: pd.Series) -> str:
     )
 
 
+def _html_label(label: str) -> str:
+    """The HTML counterpart of _italic_label, for plotly hover text.
+
+    Same convention — anthology title italicized, a trailing edition designator
+    kept upright — expressed in the small HTML subset plotly renders. The label
+    is escaped first: "Call & Response" must not reach the browser as a bare
+    ampersand.
+    """
+    match = _ED_SUFFIX.search(label)
+    title = label[: match.start()] if match else label
+    suffix = f" {match.group(1)}" if match else ""
+    return f"<i>{html.escape(title)}</i>{suffix}"
+
+
+def _pair_hover(row: pd.Series) -> str:
+    """Tooltip naming the two anthologies a point compares, and in which order.
+
+    Direction is spelled out as denominator → comparison for the same reason
+    _pair_label uses an arrow: a same-year pair contributes both permutations,
+    and the two points differ only in whose roster is the denominator.
+    """
+    earlier = _html_label(EDITION_LABELS.get(int(row["earlier_edition_id"]), "?"))
+    later = _html_label(EDITION_LABELS.get(int(row["later_edition_id"]), "?"))
+    if row["same_year"]:
+        category = "Same-year pair"
+    elif row["same_series"]:
+        category = "Same-series pair"
+    else:
+        category = "Cross-series pair"
+    gap = int(row["year_gap"])
+    gap_text = "same year" if gap == 0 else f"{gap}-year gap"
+    return (
+        f"<b>{earlier} ({int(row['earlier_year'])})"
+        f" → {later} ({int(row['later_year'])})</b><br>"
+        f"{category} · {gap_text}<br><br>"
+        f"Works reselected: {100 * row['work_retention']:.1f}%"
+        f" ({int(row['works_retained'])} of {int(row['earlier_n_works'])})<br>"
+        f"Authors reselected: {100 * row['author_retention']:.1f}%"
+        f" ({int(row['authors_retained'])} of {int(row['earlier_n_authors'])})"
+    )
+
+
 def plot(pairs: pd.DataFrame, out: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 8))
 
@@ -316,8 +392,7 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
         **MARKER_KW,
     )
 
-    lim = 100 * max(pairs["work_retention"].max(), pairs["author_retention"].max())
-    lim = min(105.0, lim * 1.08 + 2)
+    lim = _axis_limit(pairs)
     ax.plot(
         [0, lim],
         [0, lim],
@@ -381,6 +456,98 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
     plt.close(fig)
 
 
+def plot_html(pairs: pd.DataFrame, out: Path) -> None:
+    """Interactive sibling of plot(), with every point identifiable on hover.
+
+    The static figure can only name the seven CALLOUT_PAIRS, leaving the other
+    ~330 points anonymous. Here the callouts are dropped entirely: hover names
+    both anthologies for any point, which is what the annotations existed to do.
+    """
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    chrono = pairs[~pairs["same_year"]]
+    groups = [
+        (
+            chrono[~chrono["same_series"]],
+            "Cross-series pairs",
+            CROSS_SERIES_COLOR,
+            "circle",
+        ),
+        (
+            pairs[pairs["same_year"]],
+            "Same-year pairs, both directions",
+            SAME_YEAR_COLOR,
+            "triangle-up",
+        ),
+        (
+            chrono[chrono["same_series"]],
+            "Same-series pairs",
+            SAME_SERIES_COLOR,
+            "square",
+        ),
+    ]
+
+    lim = _axis_limit(pairs)
+    fig = go.Figure()
+    # Identity line added first so the markers sit on top of it.
+    fig.add_shape(
+        type="line",
+        x0=0,
+        y0=0,
+        x1=lim,
+        y1=lim,
+        line=dict(color="gray", width=1, dash="dash"),
+    )
+    # Same order as plot(): rarer categories drawn last so the cross-series
+    # cloud cannot bury them.
+    for group, label, color, symbol in groups:
+        fig.add_trace(
+            go.Scatter(
+                x=100 * group["work_retention"],
+                y=100 * group["author_retention"],
+                mode="markers",
+                name=f"{label} (N={len(group)})",
+                marker=dict(
+                    color=color,
+                    symbol=symbol,
+                    size=9,
+                    line=dict(width=0.5, color="white"),
+                ),
+                text=[_pair_hover(row) for _, row in group.iterrows()],
+                hovertemplate="%{text}<extra></extra>",
+            )
+        )
+
+    fig.update_xaxes(
+        title_text=X_AXIS_LABEL_HTML,
+        range=[-2, lim],
+        ticksuffix="%",
+        gridcolor="#e6e6e6",
+    )
+    fig.update_yaxes(
+        title_text=Y_AXIS_LABEL_HTML,
+        range=[-2, lim],
+        ticksuffix="%",
+        gridcolor="#e6e6e6",
+        # Plotly's equivalent of matplotlib's set_aspect("equal"): the diagonal
+        # must read as 45° for the above/below-the-line comparison to hold.
+        scaleanchor="x",
+        scaleratio=1,
+    )
+    fig.update_layout(
+        template="plotly_white",
+        width=860,
+        height=860,
+        hovermode="closest",
+        legend=dict(x=0.99, y=0.01, xanchor="right", yanchor="bottom"),
+        margin=dict(l=80, r=30, t=30, b=70),
+    )
+    # CDN rather than an inlined bundle: this file is committed, and inlining
+    # plotly.js would add ~3 MB to the repository on every regeneration.
+    fig.write_html(out, include_plotlyjs="cdn", full_html=True)
+    print(f"Saved → {out}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Scatter author vs work retention for every ordered edition pair."
@@ -392,6 +559,15 @@ def main() -> None:
         help=(
             "Exclude works with no author on record, and write the variant "
             f"figure to {OUT_FILE_AUTHORED.name}."
+        ),
+    )
+    parser.add_argument(
+        "--html-out",
+        type=Path,
+        default=OUT_HTML,
+        help=(
+            "Where to write the interactive HTML version "
+            f"(default: {OUT_HTML}). Not written under --authored-works-only."
         ),
     )
     args = parser.parse_args()
@@ -423,6 +599,10 @@ def main() -> None:
         )
 
     plot(pairs, out_file)
+    if args.authored_works_only:
+        print("Interactive HTML not written: published for the default scope only.")
+    else:
+        plot_html(pairs, args.html_out)
 
 
 if __name__ == "__main__":

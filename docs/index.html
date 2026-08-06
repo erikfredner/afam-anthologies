@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>African American Anthologies — figures</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 4rem;
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 0.75rem; }
+  h2 { font-size: 1.1rem; margin: 2.5rem 0 0.5rem; }
+  p { margin: 0 0 1rem; }
+  .lede { color: #555; }
+  ul { padding-left: 1.1rem; }
+  li { margin-bottom: 1.25rem; }
+  a { color: #2a78d6; }
+  .note { font-size: 0.9rem; color: #555; }
+  @media (prefers-color-scheme: dark) {
+    .lede, .note { color: #aaa; }
+    a { color: #6ea8e8; }
+  }
+</style>
+</head>
+<body>
+
+<h1>African American Anthologies</h1>
+
+<p class="lede">
+  Interactive figures from an analysis of author and work selection across
+  twenty-six anthologies of African American literature published between 1929
+  and 2025, including the four editions of <i>The Norton Anthology of African
+  American Literature</i>.
+</p>
+
+<h2>Figures</h2>
+
+<ul>
+  <li>
+    <a href="edition_pair_retention_scatter.html">Author vs. work retention, by edition pair</a><br>
+    For every ordered pair of anthologies, the share of the earlier one's works
+    and authors that reappear in the later one. Points sit above the diagonal
+    when authors are retained more reliably than the particular works chosen to
+    represent them — which is nearly always. Hover any point to see which two
+    anthologies it compares, in which direction, and the counts behind each
+    share; click a legend entry to isolate a category.
+  </li>
+</ul>
+
+<p class="note">
+  Source and analysis code:
+  <a href="https://github.com/erikfredner/afam-anthologies">github.com/erikfredner/afam-anthologies</a>
+</p>
+
+</body>
+</html>

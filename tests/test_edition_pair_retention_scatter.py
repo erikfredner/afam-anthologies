@@ -14,6 +14,7 @@ from author_vs_work_debut_reselection import (  # noqa: E402
     build_edition_table,
 )
 from edition_pair_retention_scatter import (  # noqa: E402
+    _html_label,
     callout_pair_index,
     compute_pair_retention,
     drop_unauthored_works,
@@ -109,6 +110,32 @@ def test_same_series_and_year_gap_flags(pairs: pd.DataFrame):
     assert bool(indexed.loc[(1, 3), "same_series"]) is False
     assert bool(indexed.loc[(2, 3), "same_series"]) is False
     assert indexed.loc[(1, 3), "year_gap"] == 10
+
+
+def test_retention_counts_reproduce_the_fractions(pairs: pd.DataFrame):
+    indexed = pairs.set_index(["earlier_edition_id", "later_edition_id"])
+
+    # Edition 1 -> 2: 1 of 2 works and 1 of 2 authors return.
+    assert indexed.loc[(1, 2), "works_retained"] == 1
+    assert indexed.loc[(1, 2), "earlier_n_works"] == 2
+    assert indexed.loc[(1, 2), "authors_retained"] == 1
+    assert indexed.loc[(1, 2), "earlier_n_authors"] == 2
+
+    ratio = pairs["works_retained"] / pairs["earlier_n_works"]
+    assert ratio.tolist() == pytest.approx(pairs["work_retention"].tolist())
+    ratio = pairs["authors_retained"] / pairs["earlier_n_authors"]
+    assert ratio.tolist() == pytest.approx(pairs["author_retention"].tolist())
+
+
+def test_html_label_escapes_ampersands():
+    # EDITION_LABELS[60] is "Call & Response"; a bare "&" would be invalid
+    # markup in the plotly tooltip.
+    label = _html_label("Call & Response")
+    assert label == "<i>Call &amp; Response</i>"
+
+
+def test_html_label_keeps_edition_suffix_outside_the_italics():
+    assert _html_label("NAAAL ed.3") == "<i>NAAAL</i> ed.3"
 
 
 def test_callout_pair_index_matches_requested_direction(pairs: pd.DataFrame):
