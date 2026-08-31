@@ -29,6 +29,10 @@ uv run python viz/networks/anthology_network.py --csv data/myfile.csv --out outp
 # Rebuild the 1986 NAAAL binder bibliography page in docs/ (needs pandoc on PATH)
 uv run python scripts/build_binder_bibliography.py
 
+# Rebuild the author/work selection-record tables in docs/ (live DB pull)
+uv run python scripts/build_selection_tables.py
+uv run python scripts/build_selection_tables.py --only works
+
 # Run all tests
 uv run pytest
 
@@ -51,7 +55,7 @@ afam-anthologies/
 ├── queries/          # SQL files loaded by DB-backed scripts
 ├── data/             # CSV inputs and CSV outputs (gitignored)
 ├── output/           # generated PNG/PDF figures (gitignored)
-├── docs/             # GitHub Pages source — tracked interactive HTML + Quarto memos
+├── docs/             # GitHub Pages source — tracked HTML (hand-written index + generated pages)
 └── tests/            # pytest suites that import script helpers via sys.path
 ```
 
@@ -115,6 +119,21 @@ Each script writes its PNG/PDF to `output/`.
 | `misc/` | `canonical_author_map`, `form_by_edition` | One-off canonical-author and literary-form visualizations |
 | `vernacular/` | `vernacular_share`, `vernacular_reselection_forest`, `vernacular_debut_reselection` | Bar chart of each edition's vernacular share, by selection count and by page extent; forest plot of the twelve `vernacular_reselection_test` estimates (six metrics, including the `*_vern_eds` cross-series-restricted scope) — observed vernacular rate (95% Wilson CI) over each Monte Carlo null's 95% interval, per metric × sampling mode; `vernacular_debut_reselection` is a per-debut-edition jittered boxplot of later-edition reselection counts (V vs. NV points over one box per edition, `--cross-series` to switch scope), visualizing the same debut-clustering confound the stratified null corrects for |
 
+## `scripts/` — page generators for `docs/`
+
+Build scripts that produce the tracked GitHub Pages HTML in `docs/`. Everything here writes a
+finished page rather than a figure or a table of numbers.
+
+| Script | Purpose |
+|---|---|
+| `build_binder_bibliography.py` | Renders `data/1986_naaal_binder_tocs.bib` through pandoc + citeproc into `docs/1986_binder_bibliography.html` (113 entries, Chicago notes-bibliography). Needs `pandoc` on PATH; exits if citeproc drops an entry |
+| `build_selection_tables.py` | Live DB pull → `docs/author_selection_records.html` (all 575 authors) and `docs/work_selection_records.html` (all 3,236 works), reading `queries/authors-anthology-record.sql` and `queries/works-anthology-record.sql`. Both records are rendered as percentages only — share of the 26 anthologies selected, and share of post-debut anthologies that reselected — with the reselection cell left blank for the 20 authors and 70 works that debuted in the 2025 *NAAAL* and have had no opportunity. Works count excerpts in their own right, with the parent volume named in an `In` column; angle-bracket title qualifiers (`The New Negro <essay>`) are split off and rendered as a muted parenthetical rather than dropped, since they are what distinguishes Locke's essay from the collection it opens. The 298 works with no author on record keep an **empty** Author cell — `join_author_names` here deliberately differs from `analysis/overlap/works_in_half_or_more_afam_eds.join_authors`, which credits them to "Anonymous"; the absence of attribution is itself evidence and must not be imputed. `--only {authors,works,both}`, `--authors-out`, `--works-out` |
+
+The generated pages are plain hand-editable HTML — no template engine, no CDN, the only script
+is ~30 lines of inline column sorting — so prose and individual rows can be corrected by hand
+and the edits read as ordinary git diffs. **Re-running a generator overwrites those edits.**
+`docs/index.html` is hand-maintained and must be edited by hand to link a new page.
+
 ## `tests/`
 
 Pytest unit tests for helpers inside analysis/viz scripts. They `sys.path.insert` the relevant subfolder and import `compute()`/helper functions directly, so tests cover business logic without invoking `main()`. Whenever a script moves between subfolders, update the matching `sys.path.insert` line.
@@ -122,6 +141,8 @@ Pytest unit tests for helpers inside analysis/viz scripts. They `sys.path.insert
 ## `queries/`
 
 SQL files executed by DB-backed scripts via `afam.sql.query_path(name)` (name is the file's stem; the `.sql` suffix is optional).
+
+`authors-anthology-record.sql` and `works-anthology-record.sql` are the full selection records — every author (575) and every work (3,236) ever selected, with debut-relative reselection counts. They are the `*-in-half-or-more-afam-eds.sql` queries minus the `edition_count * 2 >= total_editions` threshold, and back the `docs/` selection-record pages; keep the four in sync if the reselection logic changes.
 
 The workhorse replacement for the legacy "works per afam anthology" CSV dump is `works-authors-per-afam-edition.sql` — one row per (work, author) over AFAM-tagged editions, carrying work/parent titles, edition year/series/number, and author name + birth year. Another shared query added for the CSV→DB migration: `naal-american-authors-works.sql` (Norton American series_id 1 + 3, not AFAM-restricted, for the NAAL-exclusivity / series-comparison scripts).
 

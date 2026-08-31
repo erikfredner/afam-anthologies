@@ -1,3 +1,11 @@
+-- Every work ever selected for an African American anthology, with its full
+-- selection record. Identical to works-in-half-or-more-afam-eds.sql except that
+-- it drops the "half or more" threshold, so all 3,236 works come back.
+--
+-- Excerpts count in their own right; parent_work_title names the book an
+-- excerpt or a collected poem came from. Authorless works keep one row with a
+-- NULL author_name (LEFT JOIN) -- 298 of the 3,236 have no attribution in the
+-- database, and that absence is data, not a gap to be filled.
 WITH tagged_editions AS (
     SELECT DISTINCT e.id, e."year"
     FROM data_edition e
@@ -6,10 +14,6 @@ WITH tagged_editions AS (
     JOIN data_literarytradition lt
       ON lt.id = elt.literarytradition_id
     WHERE lt."name" = 'African-American Literature'
-),
-total_tagged_editions AS (
-    SELECT COUNT(*) AS total_editions
-    FROM tagged_editions
 ),
 work_edition_counts AS (
     SELECT
@@ -106,6 +110,4 @@ LEFT JOIN data_work pw
   ON pw.id = wrs.parent_id
 JOIN coalesced_edition_counts cec
   ON cec.group_id = COALESCE(wrs.parent_id, wrs.work_id)
-CROSS JOIN total_tagged_editions tte
-WHERE wrs.edition_count * 2 >= tte.total_editions
 ORDER BY wrs.edition_count DESC, wrs.work_title, wa.author_name;
