@@ -66,16 +66,10 @@ PAGE_TEMPLATE = """<!doctype html>
 <h1>The 1986 NAAAL binders</h1>
 
 <p class="lede">
-  In 1986, Henry Louis Gates Jr. convened the editors of <i>The Norton Anthology of
-  African American Literature</i> for their first meeting and gave each of them a
-  binder of photocopied tables of contents from earlier anthologies and collections
-  of African American writing. The {count} books listed below are the works those
-  tables of contents came from.
-</p>
-
-<p class="lede">
-  Entries are alphabetical, in Chicago notes-bibliography style. Each links to its
-  record in the Library of Congress catalog.
+  The {count} anthologies and collections whose tables of contents Henry Louis
+  Gates Jr. gave the editors of <i>The Norton Anthology of African American
+  Literature</i> at their first meeting, in 1986. Chicago style; each entry links
+  to its Library of Congress record.
 </p>
 
 <h2>Works in the binders</h2>
@@ -83,6 +77,7 @@ PAGE_TEMPLATE = """<!doctype html>
 {bibliography}
 
 <p class="note">
+  <a href="index.html">All figures and tables</a> &middot;
   Source and analysis code:
   <a href="https://github.com/erikfredner/afam-anthologies">github.com/erikfredner/afam-anthologies</a>
 </p>

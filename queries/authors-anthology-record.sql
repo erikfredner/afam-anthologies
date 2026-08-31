@@ -8,6 +8,10 @@
 --                  again, over the number that could have. opportunities is 0
 --                  (and reselection_rate NULL) for an author who debuts in the
 --                  most recent anthology.
+-- debut_edition_id the anthology they debuted in, ties within a year broken by
+--                  lowest edition id -- the (year, edition_id) debut ordering
+--                  used elsewhere in the repo. Groups authors into debut
+--                  cohorts, which share an identical opportunities count.
 WITH tagged_editions AS (
     SELECT DISTINCT e.id, e."year"
     FROM data_edition e
@@ -24,6 +28,7 @@ author_edition_counts AS (
         a.birth_year,
         a.death_year,
         MIN(te."year") AS debut_year,
+        (ARRAY_AGG(e.id ORDER BY te."year", e.id))[1] AS debut_edition_id,
         COUNT(DISTINCT e.id) AS edition_count
     FROM data_author a
     JOIN data_work_authors wa
@@ -70,6 +75,7 @@ author_reselection_stats AS (
         aec.birth_year,
         aec.death_year,
         aec.debut_year,
+        aec.debut_edition_id,
         aec.edition_count,
         opp.opportunities
 )
@@ -78,6 +84,7 @@ SELECT
     ars.author_name,
     ars.birth_year,
     ars.death_year,
+    ars.debut_edition_id,
     ars.edition_count,
     ars.reselection_count,
     ars.opportunities,

@@ -6,6 +6,12 @@
 -- excerpt or a collected poem came from. Authorless works keep one row with a
 -- NULL author_name (LEFT JOIN) -- 298 of the 3,236 have no attribution in the
 -- database, and that absence is data, not a gap to be filled.
+--
+-- debut_edition_id names the anthology a work debuted in, ties within a year
+-- broken by lowest edition id -- the (year, edition_id) debut ordering used
+-- elsewhere in the repo. It groups works into debut cohorts, which share an
+-- identical opportunities count. Computed on the individual work_id, like the
+-- reselection columns, not on the coalesced work family.
 WITH tagged_editions AS (
     SELECT DISTINCT e.id, e."year"
     FROM data_edition e
@@ -21,6 +27,7 @@ work_edition_counts AS (
         w.title AS work_title,
         w.parent_id,
         MIN(te."year") AS debut_year,
+        (ARRAY_AGG(e.id ORDER BY te."year", e.id))[1] AS debut_edition_id,
         COUNT(DISTINCT e.id) AS edition_count
     FROM data_work w
     JOIN data_workinanthology wia
@@ -79,6 +86,7 @@ work_reselection_stats AS (
         wec.work_title,
         wec.parent_id,
         wec.debut_year,
+        wec.debut_edition_id,
         wec.edition_count,
         opp.opportunities
 ),
@@ -96,6 +104,7 @@ SELECT
     wrs.parent_id,
     pw.title AS parent_work_title,
     wa.author_name,
+    wrs.debut_edition_id,
     wrs.edition_count,
     cec.coalesced_edition_count,
     wrs.reselection_count,

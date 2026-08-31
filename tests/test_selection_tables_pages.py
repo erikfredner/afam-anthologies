@@ -11,9 +11,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from build_selection_tables import (  # noqa: E402
+    add_peer_delta,
     build_author_rows,
     build_work_rows,
     format_life_dates,
+    format_peer_delta,
     format_percent,
     render_table,
     split_qualifier,
@@ -71,6 +73,76 @@ def test_format_percent_without_a_denominator():
 # ── row builders ────────────────────────────────────────────────────────
 
 
+# ── peer delta ──────────────────────────────────────────────────────────
+
+
+def _cohort(**overrides):
+    """Three entities debuting together, each with 10 post-debut opportunities."""
+    rows = [
+        {"debut_edition_id": 1, "reselection_count": 8, "opportunities": 10},
+        {"debut_edition_id": 1, "reselection_count": 2, "opportunities": 10},
+        {"debut_edition_id": 1, "reselection_count": 2, "opportunities": 10},
+    ]
+    return pd.DataFrame([{**row, **overrides} for row in rows])
+
+
+def test_peer_delta_excludes_the_focal_entity():
+    """The baseline is the *other* cohort members, not the cohort including self."""
+    deltas = add_peer_delta(_cohort())["peer_delta_pp"].tolist()
+    # 8/10 against peers' 4/20 = 20%: a 60-point gap, not the 40 points that
+    # including the focal row in its own baseline (8/10 vs 12/30) would give.
+    assert deltas[0] == pytest.approx(60.0)
+    # And the two low performers each sit below a baseline that includes the 8.
+    assert deltas[1] == pytest.approx(20.0 - 50.0)
+
+
+def test_peer_delta_is_zero_when_a_cohort_is_uniform():
+    """Everyone at the same rate is nobody above or below it."""
+    uniform = _cohort(reselection_count=5)
+    assert add_peer_delta(uniform)["peer_delta_pp"].tolist() == [0.0, 0.0, 0.0]
+
+
+def test_peer_delta_is_undefined_without_opportunities():
+    """An entity debuting in the most recent anthology has no peers to beat."""
+    debut = _cohort(opportunities=0, reselection_count=0)
+    assert add_peer_delta(debut)["peer_delta_pp"].isna().all()
+
+
+def test_peer_delta_is_undefined_for_a_lone_debut():
+    """A cohort of one has no baseline; the row must be blank, not 0."""
+    lone = _cohort().iloc[[0]]
+    assert add_peer_delta(lone)["peer_delta_pp"].isna().all()
+
+
+def test_peer_delta_compares_within_cohorts_only():
+    """Two cohorts in one frame are scored against themselves, not each other."""
+    df = pd.concat(
+        [_cohort(), _cohort().assign(debut_edition_id=2, reselection_count=1)],
+        ignore_index=True,
+    )
+    deltas = add_peer_delta(df)["peer_delta_pp"].tolist()
+    assert deltas[0] == pytest.approx(60.0)
+    # The second cohort is uniform, so its members are all at their peers' rate
+    # despite reselecting far less often than the first cohort.
+    assert deltas[3:] == [0.0, 0.0, 0.0]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (51.4, "+51"),
+        (-17.6, "−18"),
+        (0.0, "0"),
+        (0.4, "0"),
+        (float("nan"), "—"),
+        (None, "—"),
+    ],
+)
+def test_format_peer_delta(value, expected):
+    """Signed integers, a true minus sign, and an em dash where undefined."""
+    assert format_peer_delta(value) == expected
+
+
 @pytest.fixture
 def authors():
     """Two authors tied on selections, to exercise the surname tie-break."""
@@ -80,6 +152,7 @@ def authors():
                 "author_name": "Paul Laurence Dunbar",
                 "birth_year": 1872,
                 "death_year": 1906,
+                "debut_edition_id": 1,
                 "edition_count": 20,
                 "reselection_count": 19,
                 "opportunities": 20,
@@ -89,6 +162,7 @@ def authors():
                 "author_name": "W. E. B. Du Bois",
                 "birth_year": 1868,
                 "death_year": 1963,
+                "debut_edition_id": 1,
                 "edition_count": 20,
                 "reselection_count": 18,
                 "opportunities": 20,
@@ -107,12 +181,14 @@ def test_author_rows_break_ties_by_surname(authors):
     ]
 
 
-def test_author_rows_carry_four_columns(authors):
-    """Author, Dates, Selected, Reselected -- both records as percentages."""
+def test_author_rows_carry_five_columns(authors):
+    """Author, Dates, Selected, Reselected, vs. peers."""
     rows = build_author_rows(authors, 26)
-    assert len(rows[0]) == 4
+    assert len(rows[0]) == 5
     assert rows[0][2]["html"] == "77%"
     assert rows[0][3]["html"] == "90%"
+    # Du Bois reselected 18/20; his one cohort peer, Dunbar, 19/20.
+    assert rows[0][4]["html"] == "−5"
 
 
 def test_author_rows_blank_reselection_without_opportunities(authors):
@@ -122,8 +198,12 @@ def test_author_rows_blank_reselection_without_opportunities(authors):
     )
     row = build_author_rows(debut, 26)[0]
     assert row[3]["html"] == "—"
-    # Ranked just below a genuine 0% rather than left as an unsortable blank.
-    assert row[3]["sort"] == "-1"
+    # No opportunities means no peer comparison either.
+    assert row[4]["html"] == "—"
+    # Marked missing rather than given a low sentinel rank: having had no chance
+    # to be reselected is not the same as having been passed over.
+    assert row[3]["missing"] and row[3]["sort"] is None
+    assert row[4]["missing"] and row[4]["sort"] is None
 
 
 def _work_row(**overrides):
@@ -133,6 +213,7 @@ def _work_row(**overrides):
         "parent_id": None,
         "parent_work_title": None,
         "author_name": "Author One",
+        "debut_edition_id": 1,
         "edition_count": 15,
         "reselection_count": 14,
         "opportunities": 20,
@@ -194,10 +275,43 @@ def test_render_table_escapes_markup_in_names():
     """Ampersands and angle brackets must not reach the browser as markup."""
     df = pd.DataFrame([_work_row(author_name="Ida B. Wells & <Co>")])
     html = render_table(
-        ["Work", "Author", "In", "Selections", "Reselections"], build_work_rows(df, 26)
+        ["Work", "Author", "In", "Selected", "Reselected", "vs. peers"],
+        build_work_rows(df, 26),
     )
     assert "Ida B. Wells &amp; &lt;Co&gt;" in html
     assert "<Co>" not in html
+
+
+def test_render_table_flags_missing_cells():
+    """A cell with nothing to rank carries data-missing, so the sort sinks it."""
+    df = pd.DataFrame([_work_row(reselection_count=0, opportunities=0)])
+    html = render_table(
+        ["Work", "Author", "In", "Selected", "Reselected", "vs. peers"],
+        build_work_rows(df, 26),
+    )
+    # The root work's "In" cell, plus the two undefined rate cells.
+    assert html.count("data-missing") == 3
+    # A cell that does have a value never gets the marker.
+    assert '<td class="num" data-sort="15">58%</td>' in html
+
+
+def test_missing_cells_carry_no_sort_sentinel():
+    """Absent values are flagged, not ranked -- no -1 or -1000 in the output."""
+    df = pd.DataFrame([_work_row(reselection_count=0, opportunities=0)])
+    html = render_table(
+        ["Work", "Author", "In", "Selected", "Reselected", "vs. peers"],
+        build_work_rows(df, 26),
+    )
+    assert 'data-sort="-1"' not in html
+    assert 'data-sort="-1000"' not in html
+
+
+def test_unattributed_work_sorts_as_missing():
+    """The 298 authorless works sink rather than heading an A-Z author sort."""
+    df = pd.DataFrame([_work_row(author_name=None)])
+    author_cell = build_work_rows(df, 26)[0][1]
+    assert author_cell["html"] == ""
+    assert author_cell["missing"]
 
 
 def test_render_table_marks_numeric_columns_for_sorting():
