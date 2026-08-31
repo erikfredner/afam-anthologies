@@ -26,6 +26,9 @@ uv run python analysis/reselection/new_selection_reselection_probability.py --sa
 uv run python viz/heatmaps/anthology_overlap_heatmap.py
 uv run python viz/networks/anthology_network.py --csv data/myfile.csv --out output/network.png
 
+# Rebuild the 1986 NAAAL binder bibliography page in docs/ (needs pandoc on PATH)
+uv run python scripts/build_binder_bibliography.py
+
 # Run all tests
 uv run pytest
 
@@ -44,6 +47,7 @@ afam-anthologies/
 ├── src/afam/         # shared utility package — imported by every script
 ├── analysis/         # statistical/stdout/CSV analysis scripts (subfolders by theme)
 ├── viz/              # figure-producing scripts (subfolders by theme)
+├── scripts/          # build/generator scripts that are neither analysis nor figures
 ├── queries/          # SQL files loaded by DB-backed scripts
 ├── data/             # CSV inputs and CSV outputs (gitignored)
 ├── output/           # generated PNG/PDF figures (gitignored)
@@ -157,13 +161,17 @@ DATABASE_URL=PGPASSWORD=<password> psql -h <host> -U <user> <dbname>
 
 `afam.db.parse_db_params()` parses this string into psycopg connection kwargs.
 
-## Data inputs (CSV)
+## Data inputs
 
-Every script under `analysis/` and `viz/` reads live from PostgreSQL. The only CSV input that remains is one hand-maintained file:
+Every script under `analysis/` and `viz/` reads live from PostgreSQL. The only hand-maintained file inputs are:
 
 | File | Used by |
 |---|---|
-| `vernacular_pages.csv` | `afam.vernacular` (vernacular analysis/viz) — hand-maintained `volume_id → page ranges` map of editor-designated vernacular material |
+| `data/vernacular_pages.csv` | `afam.vernacular` (vernacular analysis/viz) — hand-maintained `volume_id → page ranges` map of editor-designated vernacular material |
+| `data/1986_naaal_binder_tocs.bib` | `scripts/build_binder_bibliography.py` — 113 books whose tables of contents Gates put in the binders he gave the *NAAAL* editors in 1986 |
+| `chicago-notes-bibliography.csl` | `scripts/build_binder_bibliography.py` — CSL style passed to pandoc's citeproc |
+
+The `.bib` and `.csl` are tracked (`.gitignore` covers `*.csv`, not those extensions).
 
 Editions are volume-collapsed in the DB (one `data_edition.id` per edition), so scripts group on `edition_id` directly — there is no longer any CSV-derived `edition_key` reconstruction. The DB-dump CSVs that scripts used to read (the 2026-era works/authors exports, the genders export, the 202505 datasets, the author-birth export) are obsolete; their values now come from the queries below, chiefly `queries/works-authors-per-afam-edition.sql`.
 
