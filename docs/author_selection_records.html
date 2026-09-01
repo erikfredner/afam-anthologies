@@ -30,17 +30,62 @@
   th .arrow { color: #999; }
   /* Zebra striping, as a translucent overlay rather than a fixed grey, so it
      works over whichever canvas color the reader's theme supplies. nth-child
-     tracks DOM position, so the stripes stay alternating after a re-sort. */
+     tracks DOM position, and the script rebuilds the body from the rows that
+     pass the filters, so the stripes stay alternating after a re-sort and
+     across a filtered view. */
   tbody tr:nth-child(even) { background: rgba(0, 0, 0, 0.05); }
   td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   th.num { text-align: right; }
   .qual { color: #777; font-size: 0.85em; }
+  /* The filter row sits in the thead, under the headings it filters, so the
+     boxes are read as belonging to their column. Its cells are td, not th, to
+     keep them out of the sort script's list of clickable headings. */
+  thead tr.filters td {
+    padding: 0 0.6rem 0.5rem;
+    border-bottom: 1px solid #ccc;
+    vertical-align: bottom;
+  }
+  thead tr.filters input {
+    font: inherit;
+    font-size: 0.85rem;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.15rem 0.35rem;
+    border: 1px solid #bbb;
+    border-radius: 3px;
+    background: transparent;
+    color: inherit;
+  }
+  thead tr.filters input::placeholder { color: #999; }
+  .range { display: flex; gap: 0.25rem; }
+  .range input { min-width: 3.4rem; text-align: right; }
+  .tablemeta {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    font-size: 0.9rem;
+    color: #555;
+    margin: 0 0 0.5rem;
+  }
+  .tablemeta button {
+    font: inherit;
+    font-size: 0.85rem;
+    color: inherit;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid #bbb;
+    border-radius: 3px;
+    background: transparent;
+    cursor: pointer;
+  }
   @media (prefers-color-scheme: dark) {
-    .lede, .note { color: #aaa; }
+    .lede, .note, .tablemeta { color: #aaa; }
     a { color: #6ea8e8; }
     th, td { border-bottom-color: #333; }
     tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.07); }
     .qual { color: #999; }
+    thead tr.filters td { border-bottom-color: #555; }
+    thead tr.filters input, .tablemeta button { border-color: #555; }
+    thead tr.filters input::placeholder { color: #777; }
   }
 </style>
 </head>
@@ -61,11 +106,29 @@
   who debuted in the most recent anthology.
 </p>
 
+<p class="lede">
+  Click a heading to sort by that column; click it again to reverse. The boxes
+  beneath the headings filter the table: a single box matches its text anywhere
+  in the cell, and a pair of boxes keeps the rows falling between the two
+  numbers, either of which can be left empty. Rows with nothing in a column
+  &mdash; no dates on record, no reselection rate yet &mdash; fall out when that
+  column is given a range, and sink to the bottom of a sort in either
+  direction.
+</p>
+
 <h2>All 575 authors selected in 26 anthologies</h2>
 
+<p class="tablemeta">
+  <span id="row-count"></span>
+  <button type="button" id="clear-filters" hidden>Clear filters</button>
+</p>
+
 <div class="wrap">
-<table>
-<thead><tr><th>Author<span class="arrow"></span></th><th>Dates<span class="arrow"></span></th><th class="num">Selected<span class="arrow"></span></th><th class="num">Reselected<span class="arrow"></span></th><th class="num">vs. peers<span class="arrow"></span></th></tr></thead>
+<table data-unit="authors">
+<thead>
+<tr class="cols"><th>Author<span class="arrow"></span></th><th>Dates<span class="arrow"></span></th><th class="num">Selected<span class="arrow"></span></th><th class="num">Reselected<span class="arrow"></span></th><th class="num">vs. peers<span class="arrow"></span></th></tr>
+<tr class="filters"><td><input type="search" data-column="0" data-kind="text" placeholder="filter" aria-label="Filter by Author"></td><td><div class="range"><input type="text" inputmode="numeric" data-column="1" data-kind="min" placeholder="from" aria-label="Lowest Dates"><input type="text" inputmode="numeric" data-column="1" data-kind="max" placeholder="to" aria-label="Highest Dates"></div></td><td><div class="range"><input type="text" inputmode="numeric" data-column="2" data-kind="min" placeholder="min" aria-label="Lowest Selected"><input type="text" inputmode="numeric" data-column="2" data-kind="max" placeholder="max" aria-label="Highest Selected"></div></td><td><div class="range"><input type="text" inputmode="numeric" data-column="3" data-kind="min" placeholder="min" aria-label="Lowest Reselected"><input type="text" inputmode="numeric" data-column="3" data-kind="max" placeholder="max" aria-label="Highest Reselected"></div></td><td><div class="range"><input type="text" inputmode="numeric" data-column="4" data-kind="min" placeholder="min" aria-label="Lowest vs. peers"><input type="text" inputmode="numeric" data-column="4" data-kind="max" placeholder="max" aria-label="Highest vs. peers"></div></td></tr>
+</thead>
 <tbody>
 <tr><td>Sterling Brown</td><td data-sort="1901.0">1901–1989</td><td class="num" data-sort="26">100%</td><td class="num" data-sort="1.000000">100%</td><td class="num" data-sort="56.744186">+57</td></tr>
 <tr><td>Charles W. Chesnutt</td><td data-sort="1858.0">1858–1932</td><td class="num" data-sort="26">100%</td><td class="num" data-sort="1.000000">100%</td><td class="num" data-sort="56.744186">+57</td></tr>
@@ -653,13 +716,76 @@
 </p>
 
 <script>
-// Click a column heading to sort by it; click again to reverse. Cells carry a
-// data-sort attribute when their display text does not sort correctly on its
-// own -- a rounded "44%" should rank by its exact rate, "1901-1967" by birth
-// year -- and a data-missing attribute when there is no value to rank at all.
 document.querySelectorAll("table").forEach(function (table) {
   var body = table.tBodies[0];
-  table.querySelectorAll("th").forEach(function (th, column) {
+  var headings = Array.prototype.slice.call(table.querySelectorAll("thead tr.cols th"));
+  var filters = Array.prototype.slice.call(table.querySelectorAll("thead tr.filters input"));
+  var rows = Array.prototype.slice.call(body.rows);
+  var count = document.getElementById("row-count");
+  var clear = document.getElementById("clear-filters");
+  var unit = table.dataset.unit || "rows";
+
+  // A cell's sort key. Cells carry a data-sort attribute when their display
+  // text does not sort correctly on its own -- a rounded "44%" should rank by
+  // its exact rate, "1901-1967" by birth year -- and a data-missing attribute
+  // when there is no value to rank at all.
+  function key(cell) {
+    var raw = cell.dataset.sort !== undefined ? cell.dataset.sort : cell.textContent.trim();
+    var number = parseFloat(raw);
+    return isNaN(number) ? raw : number;
+  }
+
+  // The number a *filter* compares against is read from the visible text rather
+  // than from data-sort, because the reader types what the column shows them:
+  // "58%" is 58, "−18" is −18, and "1901–1967" or "b. 1944" is the year each
+  // leads with. data-sort is left to the sort, where the exact unrounded value
+  // matters and its units need not match the display -- the selection column
+  // shows a percentage but ranks on the underlying count.
+  function amount(cell) {
+    if (cell.hasAttribute("data-missing")) { return NaN; }
+    var found = cell.textContent.replace(/−/g, "-").match(/-?\d+(\.\d+)?/);
+    return found ? parseFloat(found[0]) : NaN;
+  }
+
+  function matches(row) {
+    return filters.every(function (input) {
+      var wanted = input.value.trim();
+      if (!wanted) { return true; }
+      var cell = row.cells[Number(input.dataset.column)];
+      if (input.dataset.kind === "text") {
+        return cell.textContent.toLowerCase().indexOf(wanted.toLowerCase()) !== -1;
+      }
+      var bound = parseFloat(wanted.replace(/−/g, "-"));
+      if (isNaN(bound)) { return true; }  // a half-typed bound filters nothing
+      var value = amount(cell);
+      // A cell with no value cannot satisfy a bound. Having had no chance to be
+      // reselected is not a low reselection rate, so those rows drop out of a
+      // range rather than ranking as zero -- the same reasoning that sinks them
+      // in both directions of a sort.
+      if (isNaN(value)) { return false; }
+      return input.dataset.kind === "min" ? value >= bound : value <= bound;
+    });
+  }
+
+  function draw() {
+    var visible = rows.filter(matches);
+    var fragment = document.createDocumentFragment();
+    visible.forEach(function (row) { fragment.appendChild(row); });
+    // The body is rebuilt from the passing rows rather than hiding the rest
+    // with display:none, so the zebra striping -- which counts DOM position --
+    // keeps alternating down whatever is on screen.
+    body.replaceChildren(fragment);
+    if (count) {
+      count.textContent = visible.length === rows.length
+        ? "All " + rows.length.toLocaleString() + " " + unit
+        : visible.length.toLocaleString() + " of " + rows.length.toLocaleString() + " " + unit;
+    }
+    if (clear) {
+      clear.hidden = filters.every(function (input) { return !input.value.trim(); });
+    }
+  }
+
+  headings.forEach(function (th, column) {
     th.addEventListener("click", function () {
       var numeric = th.classList.contains("num");
       // First click sorts the way the column is most useful: counts high-to-low,
@@ -667,7 +793,8 @@ document.querySelectorAll("table").forEach(function (table) {
       var descending = th.dataset.direction
         ? th.dataset.direction !== "desc"
         : numeric;
-      var rows = Array.prototype.slice.call(body.rows);
+      // The whole set is sorted, filtered or not, so clearing a filter restores
+      // the hidden rows in the order the reader last chose.
       rows.sort(function (a, b) {
         // Rows with no value sink to the bottom in BOTH directions, the
         // convention in SQL (NULLS LAST) and in spreadsheets. Ranking them as
@@ -681,20 +808,24 @@ document.querySelectorAll("table").forEach(function (table) {
         if (numeric) { return descending ? y - x : x - y; }
         return descending ? String(y).localeCompare(x) : String(x).localeCompare(y);
       });
-      table.querySelectorAll("th").forEach(function (other) {
+      headings.forEach(function (other) {
         delete other.dataset.direction;
         other.querySelector(".arrow").textContent = "";
       });
       th.dataset.direction = descending ? "desc" : "asc";
       th.querySelector(".arrow").textContent = descending ? " ▼" : " ▲";
-      rows.forEach(function (row) { body.appendChild(row); });
+      draw();
     });
   });
-  function key(cell) {
-    var raw = cell.dataset.sort !== undefined ? cell.dataset.sort : cell.textContent.trim();
-    var number = parseFloat(raw);
-    return isNaN(number) ? raw : number;
+
+  filters.forEach(function (input) { input.addEventListener("input", draw); });
+  if (clear) {
+    clear.addEventListener("click", function () {
+      filters.forEach(function (input) { input.value = ""; });
+      draw();
+    });
   }
+  draw();
 });
 </script>
 

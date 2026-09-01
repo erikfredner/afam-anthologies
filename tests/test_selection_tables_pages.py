@@ -11,6 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from build_selection_tables import (  # noqa: E402
+    Column,
     add_peer_delta,
     build_author_rows,
     build_work_rows,
@@ -322,3 +323,88 @@ def test_render_table_marks_numeric_columns_for_sorting():
     )
     assert '<th class="num">Selected<span class="arrow"></span></th>' in html
     assert '<td class="num" data-sort="15">58%</td>' in html
+
+
+# ── filter row ──────────────────────────────────────────────────────────
+
+
+def _work_table(headers=None):
+    """One rendered works table, for asserting on its head markup."""
+    return render_table(
+        headers or ["Work", "Author", "In", "Selected", "Reselected", "vs. peers"],
+        build_work_rows(pd.DataFrame([_work_row()]), 26),
+        unit="works",
+    )
+
+
+def test_headings_and_filters_are_separate_rows():
+    """
+    The sort script collects its clickable headings from tr.cols alone.
+
+    The filter boxes sit in a tr.filters of td cells, so a click in a filter box
+    can never be read as a request to sort the column.
+    """
+    html = _work_table()
+    assert '<tr class="cols"><th>Work' in html
+    assert '<tr class="filters"><td>' in html
+    assert '<tr class="filters"><th' not in html
+
+
+def test_text_columns_get_a_substring_box():
+    """A column of names filters by what is typed appearing anywhere in a cell."""
+    html = _work_table()
+    assert (
+        '<input type="search" data-column="1" data-kind="text"'
+        ' placeholder="filter" aria-label="Filter by Author">' in html
+    )
+
+
+def test_numeric_columns_get_a_lowest_and_highest_box():
+    """A column of numbers filters by range, not by substring."""
+    html = _work_table()
+    assert html.count('data-kind="min"') == 3  # Selected, Reselected, vs. peers
+    assert html.count('data-kind="max"') == 3
+    assert 'data-column="3" data-kind="min" placeholder="min"' in html
+    assert 'aria-label="Highest Selected"' in html
+
+
+def test_an_explicit_range_overrides_the_numeric_default():
+    """
+    Dates is not a numeric column, but "born between" is the useful filter.
+
+    Its placeholders say "from"/"to" rather than "min"/"max", since the reader
+    is bounding a span of years rather than a quantity.
+    """
+    html = render_table(
+        [Column("Dates", filter="range", low="from", high="to")],
+        [[{"html": "1901–1967", "sort": 1901, "numeric": False, "missing": False}]],
+        unit="authors",
+    )
+    assert 'data-kind="min" placeholder="from" aria-label="Lowest Dates"' in html
+    assert 'data-kind="max" placeholder="to" aria-label="Highest Dates"' in html
+
+
+def test_a_column_can_opt_out_of_filtering():
+    """filter="none" leaves the cell empty rather than dropping it, so the
+    filter row keeps one cell per column and the columns stay aligned."""
+    html = render_table(
+        [Column("Work", filter="none")],
+        [[{"html": "A Work", "sort": None, "numeric": False, "missing": False}]],
+    )
+    assert '<tr class="filters"><td></td></tr>' in html
+
+
+def test_the_table_names_what_it_counts():
+    """The script says "12 of 3,236 works", so it needs the noun."""
+    assert '<table data-unit="works">' in _work_table()
+    assert 'data-unit="rows"' in render_table(
+        ["Work"],
+        [[{"html": "A Work", "sort": None, "numeric": False, "missing": False}]],
+    )
+
+
+def test_bare_string_headings_still_work():
+    """Most columns want the default, and say so by staying plain strings."""
+    html = _work_table()
+    assert '<th>Work<span class="arrow"></span></th>' in html
+    assert 'data-column="0" data-kind="text"' in html
