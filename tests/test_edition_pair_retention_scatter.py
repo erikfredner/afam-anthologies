@@ -9,15 +9,18 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "viz" / "reselection"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "analysis" / "reselection"))
 
-from author_vs_work_debut_reselection import (  # noqa: E402
+from author_vs_work_debut_reselection import (
     add_entry_group,
     build_edition_table,
 )
-from edition_pair_retention_scatter import (  # noqa: E402
+from edition_pair_retention_scatter import (
+    _above_share,
+    _exception_sentence,
     _html_label,
     callout_pair_index,
     compute_pair_retention,
     drop_unauthored_works,
+    page_summary,
 )
 
 
@@ -289,3 +292,74 @@ def test_same_year_pair_emits_both_permutations(same_year_pairs: pd.DataFrame):
     assert indexed.loc[(11, 10), "work_retention"] == pytest.approx(1 / 3)
     assert indexed.loc[(11, 10), "author_retention"] == pytest.approx(1 / 3)
     assert indexed.loc[(11, 10), "year_gap"] == 0
+
+
+# ── page_summary: the numbers the published page quotes ─────────────────
+
+
+def test_page_summary_categories_partition_the_points(pairs: pd.DataFrame):
+    """Every plotted point belongs to exactly one of the three marker groups."""
+    s = page_summary(pairs)
+    assert s["n_points"] == len(pairs)
+    assert s["n_cross_series"] + s["n_same_series"] + s["n_same_year"] == s["n_points"]
+
+
+def test_page_summary_counts_only_chronological_pairs_in_the_headline(
+    pairs: pd.DataFrame,
+):
+    """Same-year pairs are excluded from the above-the-line statistic."""
+    s = page_summary(pairs)
+    assert s["n_chrono"] == s["n_points"] - s["n_same_year"]
+    assert s["above"] == _above_share(pairs[~pairs["same_year"]])[0]
+    assert s["above_pct"] == pytest.approx(100 * s["above"] / s["n_chrono"])
+
+
+def test_page_summary_exceptions_are_the_pairs_not_above_the_line(
+    pairs: pd.DataFrame,
+):
+    """The named exceptions and the above-the-line count must sum to the total."""
+    s = page_summary(pairs)
+    assert len(s["exceptions"]) == s["n_chrono"] - s["above"]
+    assert (
+        s["exceptions"]["author_retention"] <= s["exceptions"]["work_retention"]
+    ).all()
+
+
+def _exception_row(**overrides) -> pd.DataFrame:
+    """One chronological pair sitting on or below the identity line."""
+    row = {
+        "earlier_edition_id": 21,
+        "later_edition_id": 20,
+        "earlier_year": 1972,
+        "later_year": 1985,
+        "work_retention": 0.75,
+        "author_retention": 0.74,
+    }
+    return pd.DataFrame([{**row, **overrides}])
+
+
+def test_exception_sentence_names_the_single_pair():
+    """One exception is named outright rather than left as a residual count."""
+    sentence = _exception_sentence(_exception_row())
+    assert sentence.startswith("The one exception is")
+    # Both anthologies, both years, and both shares are on the page.
+    assert "1972" in sentence and "1985" in sentence
+    assert "75% of the works" in sentence and "74% of the authors" in sentence
+    assert sentence.endswith(".")
+
+
+def test_exception_sentence_lists_several_pairs():
+    both = pd.concat(
+        [_exception_row(), _exception_row(earlier_year=1968, later_year=1971)],
+        ignore_index=True,
+    )
+    sentence = _exception_sentence(both)
+    assert sentence.startswith("The exceptions are")
+    assert "1968" in sentence and "1972" in sentence
+
+
+def test_exception_sentence_when_every_pair_is_above_the_line():
+    empty = pd.DataFrame(
+        columns=["earlier_edition_id", "later_edition_id", "earlier_year"]
+    )
+    assert _exception_sentence(empty) == "No chronological pair falls on or below it."

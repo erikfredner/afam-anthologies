@@ -252,6 +252,47 @@ def _above_share(pairs: pd.DataFrame) -> tuple[int, int]:
     return above, len(pairs)
 
 
+def page_summary(pairs: pd.DataFrame) -> dict:
+    """The counts the published page's prose quotes back to the reader.
+
+    Kept out of plot_html so the numbers in the text are derived from the same
+    frame the markers are, and can be checked without invoking plotly.
+    """
+    chrono = pairs[~pairs["same_year"]]
+    above, n_chrono = _above_share(chrono)
+    return {
+        "n_points": len(pairs),
+        "n_chrono": n_chrono,
+        "n_cross_series": int((~chrono["same_series"]).sum()),
+        "n_same_series": int(chrono["same_series"].sum()),
+        "n_same_year": int(pairs["same_year"].sum()),
+        "above": above,
+        "above_pct": 100 * above / n_chrono if n_chrono else float("nan"),
+        # Chronological pairs that do *not* sit above the identity line. Named
+        # individually on the page rather than left as a residual, since there
+        # are currently one or two of them.
+        "exceptions": chrono[chrono["author_retention"] <= chrono["work_retention"]],
+    }
+
+
+def _exception_sentence(exceptions: pd.DataFrame) -> str:
+    """Name the chronological pairs where authors were not the better-kept set."""
+    if exceptions.empty:
+        return "No chronological pair falls on or below it."
+    named = [
+        f"{_html_label(EDITION_LABELS.get(int(row['earlier_edition_id']), '?'))}"
+        f" ({int(row['earlier_year'])}) → "
+        f"{_html_label(EDITION_LABELS.get(int(row['later_edition_id']), '?'))}"
+        f" ({int(row['later_year'])}), which kept"
+        f" {100 * row['work_retention']:.0f}% of the works against"
+        f" {100 * row['author_retention']:.0f}% of the authors"
+        for _, row in exceptions.iterrows()
+    ]
+    if len(named) == 1:
+        return f"The one exception is {named[0]}."
+    return "The exceptions are " + "; ".join(named) + "."
+
+
 def callout_pair_index(pairs: pd.DataFrame, edition_ids: tuple[int, int]) -> int:
     """Index of the row for a specific (earlier, later) edition-id pair.
 
@@ -456,12 +497,127 @@ def plot(pairs: pd.DataFrame, out: Path) -> None:
     plt.close(fig)
 
 
+# The published page's styling mirrors docs/index.html so the site reads as one
+# thing; the additions are a wider body (the square chart needs more than the
+# 42rem prose measure) and the .figure panel, which keeps its own white ground
+# because plotly's "plotly_white" template does not follow prefers-color-scheme.
+PAGE_CSS = """  :root { color-scheme: light dark; }
+  body {
+    max-width: 54rem;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 4rem;
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  }
+  .prose { max-width: 42rem; margin: 0 auto; }
+  h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 0.75rem; }
+  h2 { font-size: 1.1rem; margin: 2.5rem 0 0.5rem; }
+  p { margin: 0 0 1rem; }
+  .lede { color: #555; }
+  a { color: #2a78d6; }
+  .note { font-size: 0.9rem; color: #555; }
+  .figure {
+    max-width: 900px;
+    margin: 2rem auto;
+    padding: 0.5rem;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+  }
+  @media (prefers-color-scheme: dark) {
+    .lede, .note { color: #aaa; }
+    a { color: #6ea8e8; }
+    .figure { border-color: #333; }
+  }"""
+
+PAGE_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Author vs. work retention, by edition pair</title>
+<style>
+{css}
+</style>
+</head>
+<body>
+
+<div class="prose">
+
+<h1>Author vs. work retention, by edition pair</h1>
+
+<p class="lede">
+  Every ordered pair of the twenty-six anthologies, earlier to later. A point's
+  horizontal position is the share of the earlier anthology's <b>works</b> that
+  reappear in the later one; its vertical position is the share of its
+  <b>authors</b>. Hover a point to name both anthologies, the direction, and the
+  counts behind each share.
+</p>
+
+</div>
+
+<div class="figure">
+{figure}
+</div>
+
+<div class="prose">
+
+<h2>How to read it</h2>
+
+<p>
+  The dashed line is parity. A point above it means the later anthology kept more
+  of the earlier one's authors than of its works &mdash; it reprinted the writer,
+  but chose something else by them. {above} of the {n_chrono} chronological pairs
+  sit above the line ({above_pct:.1f}%). {exception_sentence}
+</p>
+
+<p>
+  Each work and each author is counted at most once per pair, and both shares are
+  normalized against the <i>earlier</i> anthology's roster. A &rarr; B is
+  therefore a different point from B &rarr; A, and the direction is the first
+  thing the tooltip names.
+</p>
+
+<p>
+  Marker shape separates three kinds of pair.
+  <b>Cross-series pairs</b> ({n_cross_series}) compare anthologies from different
+  series. <b>Same-series pairs</b> ({n_same_series}) compare successive editions of
+  one anthology, such as the four editions of <i>The Norton Anthology of African
+  American Literature</i>; inertia within a series lifts both axes, so these are
+  marked apart rather than mixed into the cloud. <b>Same-year pairs</b>
+  ({n_same_year} points) compare anthologies published in the same year &mdash; the
+  three of 1968, for instance &mdash; which have no genuine earlier-and-later
+  relationship: both directions are plotted, and neither is counted in the figure
+  above.
+</p>
+
+<p class="note">
+  <a href="index.html">All figures and tables</a> &middot;
+  Source and analysis code:
+  <a href="https://github.com/erikfredner/afam-anthologies">github.com/erikfredner/afam-anthologies</a>
+</p>
+
+</div>
+
+</body>
+</html>
+"""
+
+# Fixed rather than a fresh UUID per run: this page is tracked, and a random div
+# id would rewrite the whole file on every regeneration.
+HTML_DIV_ID = "retention-scatter"
+
+
 def plot_html(pairs: pd.DataFrame, out: Path) -> None:
     """Interactive sibling of plot(), with every point identifiable on hover.
 
     The static figure can only name the seven CALLOUT_PAIRS, leaving the other
     ~330 points anonymous. Here the callouts are dropped entirely: hover names
     both anthologies for any point, which is what the annotations existed to do.
+
+    The chart is written into a page carrying the reading context a bare plotly
+    dump cannot: what a point is, what the diagonal means, and why same-series
+    and same-year pairs are marked apart. The prose quotes page_summary(), so a
+    regeneration cannot leave the text describing an older frame.
     """
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -536,15 +692,33 @@ def plot_html(pairs: pd.DataFrame, out: Path) -> None:
     )
     fig.update_layout(
         template="plotly_white",
-        width=860,
-        height=860,
+        # No fixed pixel width: the page sizes the chart, so it stays readable
+        # on a narrow screen. Height is fixed because scaleanchor squares the
+        # axes, and a square chart in a short box would waste the width.
+        autosize=True,
         hovermode="closest",
         legend=dict(x=0.99, y=0.01, xanchor="right", yanchor="bottom"),
         margin=dict(l=80, r=30, t=30, b=70),
     )
     # CDN rather than an inlined bundle: this file is committed, and inlining
     # plotly.js would add ~3 MB to the repository on every regeneration.
-    fig.write_html(out, include_plotlyjs="cdn", full_html=True)
+    figure = fig.to_html(
+        include_plotlyjs="cdn",
+        full_html=False,
+        default_width="100%",
+        default_height="820px",
+        div_id=HTML_DIV_ID,
+    )
+    summary = page_summary(pairs)
+    out.write_text(
+        PAGE_TEMPLATE.format(
+            css=PAGE_CSS,
+            figure=figure,
+            exception_sentence=_exception_sentence(summary["exceptions"]),
+            **{k: v for k, v in summary.items() if k != "exceptions"},
+        ),
+        encoding="utf-8",
+    )
     print(f"Saved → {out}")
 
 
