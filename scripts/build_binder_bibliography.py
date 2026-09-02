@@ -45,10 +45,10 @@ PAGE_TEMPLATE = """<!doctype html>
 <h1>The 1986 NAAAL binders</h1>
 
 <p class="lede">
-  The {count} anthologies and collections whose tables of contents Henry Louis
-  Gates Jr. gave the editors of <i>The Norton Anthology of African American
-  Literature</i> at their first meeting, in 1986. Chicago style; each entry links
-  to its Library of Congress record.
+  Henry Louis Gates Jr. gave the editors of <i>The Norton Anthology of
+  African American Literature</i> these {count} anthologies and collections
+  at their first meeting, in 1986. Citations follow Chicago style, and each
+  entry links to its Library of Congress record.
 </p>
 
 <h2>Works in the binders</h2>

@@ -50,15 +50,15 @@ PAGE_TEMPLATE = """<!doctype html>
 <h1>Anthologies considered</h1>
 
 <p class="lede">
-  The {total} anthologies of African American literature that were eligible for
-  this project, and the {n_selected} of them whose contents were indexed and
-  analyzed. Chicago style.
+  This project considered {total} anthologies of African American literature
+  and indexed and analyzed the contents of {n_selected} of them. Citations
+  follow Chicago style.
 </p>
 
 <h2>In the analysis ({n_selected})</h2>
 
 <p>
-  The anthologies behind every
+  These anthologies underlie every
   <a href="index.html">figure and table</a> on this site.
 </p>
 
