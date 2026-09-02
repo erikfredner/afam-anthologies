@@ -56,9 +56,7 @@ PAGE_TEMPLATE = """<!doctype html>
 {bibliography}
 
 <p class="note">
-  <a href="index.html">All figures and tables</a> &middot;
-  Source and analysis code:
-  <a href="https://github.com/erikfredner/afam-anthologies">github.com/erikfredner/afam-anthologies</a>
+  <a href="index.html">All figures and tables</a>
 </p>
 
 </body>
