@@ -10,6 +10,11 @@ report:
   - mean/median number of works per anthologization
   - min/mean/median/max # works overlapping between cross-series edition pairs
   - the author's work appearing in the most cross-series edition pairs
+  - how many of those pairs share zero works by the author
+
+A pooled line under each table reports the share of (author, cross-series
+edition pair) instances that share zero works — i.e. how often two editors
+who agree on an author agree on none of that author's works.
 
 Within-series pairs (e.g. NAAAL 1997 vs NAAAL 2004) are excluded — successive
 editions of the same series tend to inherit prior selections, so within-series
@@ -124,6 +129,7 @@ def compute(df: pd.DataFrame) -> pd.DataFrame:
                 "mean_works_per_edition": round(mean(per_ed_counts), 3),
                 "median_works_per_edition": median(per_ed_counts),
                 "n_cross_series_pairs": len(overlaps),
+                "n_zero_overlap_pairs": sum(1 for o in overlaps if o == 0),
                 "min_overlap": min(overlaps),
                 "mean_overlap": round(mean(overlaps), 3),
                 "median_overlap": median(overlaps),
@@ -175,6 +181,14 @@ def main() -> None:
         with pd.option_context("display.max_rows", None, "display.width", 240):
             print(display.to_string(index=False))
         print(f"\n{len(table):,} authors with at least one cross-series edition pair")
+
+        pairs = int(table["n_cross_series_pairs"].sum())
+        zero = int(table["n_zero_overlap_pairs"].sum())
+        print(
+            f"Pooled over (author, cross-series edition pair) instances: "
+            f"{zero:,} of {pairs:,} ({100 * zero / pairs:.1f}%) share zero works "
+            f"by that author."
+        )
 
         if not args.no_csv:
             out_csv.parent.mkdir(parents=True, exist_ok=True)
