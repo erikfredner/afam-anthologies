@@ -1,9 +1,10 @@
 """Shared pandoc/citeproc plumbing for the bibliography pages in docs/.
 
-`build_binder_bibliography.py` and `build_comprehensive_bibliography.py` both
-turn a BibTeX file into a Chicago notes-bibliography list wrapped in the site's
-house style. Everything they have in common lives here: the citation-key
-reader, the pandoc invocation, and the stylesheet the two pages share.
+`build_comprehensive_bibliography.py` turns a BibTeX file into a Chicago
+notes-bibliography list wrapped in the site's house style; it keeps the
+citation-key reader and the pandoc invocation here. `build_binder_bibliography.py`
+renders a hand-corrected Markdown list instead, and shares only the stylesheet,
+the entry-count check, and the input-file check.
 
 Requires a `pandoc` binary on PATH (citeproc is built into pandoc 3.x).
 """
