@@ -50,10 +50,41 @@ PAGE_TEMPLATE = """<!doctype html>
 <h1>Anthologies considered</h1>
 
 <p class="lede">
-  This project considered {total} anthologies of African American literature
-  and indexed and analyzed the contents of {n_selected} of them. Citations
-  follow Chicago style.
+  This project considered {total} comprehensive anthologies of African American
+  literature and analyzed the contents of {n_selected} of them.
 </p>
+
+<p>
+  We defined &ldquo;comprehensive&rdquo; as encompassing African American
+  literary history from the antebellum period (or earlier) to near the
+  anthology&rsquo;s date of publication, and including more than one literary
+  form. All {total} anthologies below meet that definition.
+</p>
+
+<p>
+  We applied a further parameter of scope, narrowing the corpus to the
+  {n_selected} anthologies that included at least as many authors and works as
+  <i>An Anthology of American Negro Literature</i> (1929), the first
+  comprehensive anthology of African American literature.
+</p>
+
+<p>
+  We do include in our corpus of {n_selected} one edge case. <i>Dark Symphony:
+  Negro Literature in America</i> (1968) contains slightly fewer authors but
+  more works than <i>An Anthology of American Negro Literature</i>. We chose to
+  include it because:
+</p>
+
+<ul>
+  <li>It straddles the line on our two measures of author and work quantity</li>
+  <li>It was, along with <i>An Introduction to Black Literature in America: From
+    1746 to the Present</i> (1968), a pioneer in organizing its contents by
+    period rather than genre</li>
+  <li>It featured in the <i>NAAAL</i> editors&rsquo; manual as a comparator
+    (along with <i>Black Writers of America: A Comprehensive Anthology</i>
+    [1972]) for how the <i>NAAAL</i> editors might proportion their author
+    and work selections by period</li>
+</ul>
 
 <h2>In the analysis ({n_selected})</h2>
 
@@ -67,7 +98,19 @@ PAGE_TEMPLATE = """<!doctype html>
 <h2>Considered, not included ({n_other})</h2>
 
 <p>
-  These titles were eligible for consideration but are not part of the analysis.
+  These titles were eligible for consideration and are entered in our database.
+  However, because they (mostly) fall below our scope threshold, we exclude them
+  from our analysis to maximize comparability across our corpus. Re-running our
+  headline findings with these anthologies included does not significantly
+  change them.
+</p>
+
+<p>
+  <i>Black Culture</i> and <i>Crossing the Danger Water</i> do meet our
+  definition of comprehensive. We excluded these from our final corpus of
+  {n_selected} because influential assessors of African American anthologies
+  have judged them as not fitting the category since they include &ldquo;much
+  nonliterary material.&rdquo;
 </p>
 
 {other_bibliography}

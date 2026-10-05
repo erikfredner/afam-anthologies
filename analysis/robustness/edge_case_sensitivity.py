@@ -2,22 +2,41 @@
 edge_case_sensitivity.py
 -------------------------
 Robustness check: re-run the project's four headline author-vs-work claims
-with three edge-case anthologies added to the AFAM corpus, to confirm the
-published findings hold regardless of their exclusion.
+with excluded anthologies added to the AFAM corpus, to confirm the published
+findings hold regardless of their exclusion.
 
-Excluded anthologies (no row in data_edition_literary_traditions linking to
-the 'African-American Literature' tradition -- the only filter any script in
-this repo uses to build its AFAM edition set):
+Two widenings are run against the baseline. The first adds only the three
+edge-case anthologies that meet the project's definition of "comprehensive"
+(or, for id=22, sit in a series whose later edition is in the corpus):
 
   - Black Culture: Reading and Writing Black (1972)      edition_id=79
   - Crossing the Danger Water (1993)                      edition_id=62
   - African American Literature series, 1st ed. (1993)    edition_id=22
 
-There is no other blocklist anywhere in the codebase; the exclusion is
-purely the absence of that tag. This script widens the tag filter in-memory
-(never touching the database or the checked-in query file) to include these
-three ids alongside the normally-tagged set, then prints each claim's
-statistic baseline (26 tagged editions) vs. with the edge cases (29).
+The second adds all 13 anthologies listed as "Considered, not included" on
+docs/comprehensive_bibliography.html -- those three plus the ten that fall
+below the scope threshold (fewer authors and works than Calverton's 1929
+*Anthology of American Negro Literature*):
+
+  - Images of the Negro in America (1965)                 edition_id=81
+  - Right On! (1970)                                      edition_id=66
+  - On Being Black (1970)                                 edition_id=67
+  - Afro-American Voices, 1770's-1970's (1970)            edition_id=74
+  - The Black American Experience (1970)                  edition_id=75
+  - Black American Literature (Turner, 1970)              edition_id=76
+  - Black Identity: A Thematic Reader (1970)              edition_id=80
+  - I, Too, Sing America (1971)                           edition_id=65
+  - Black Literature: ... Outstanding Black Writers (1972) edition_id=78
+  - African American Literature: A Concise Anthology (2009) edition_id=77
+
+None of the 13 has a row in data_edition_literary_traditions linking to the
+'African-American Literature' tradition -- the only filter any script in this
+repo uses to build its AFAM edition set. There is no other blocklist anywhere
+in the codebase; the exclusion is purely the absence of that tag. This script
+widens the tag filter in-memory (never touching the database or the
+checked-in query file) to include the extra ids alongside the normally-tagged
+set, then prints each claim's statistic for the baseline (26 tagged
+editions), with the edge cases (29), and with every excluded anthology (39).
 
 Usage:
     uv run python analysis/robustness/edge_case_sensitivity.py
@@ -62,6 +81,11 @@ EDGE_CASE_EDITION_IDS = (
     62,
     22,
 )  # Black Culture, Crossing the Danger Water, AAL ed.1
+# The edge cases plus the ten below-threshold anthologies: every title in the
+# "Considered, not included" section of docs/comprehensive_bibliography.html.
+BELOW_THRESHOLD_EDITION_IDS = (81, 66, 67, 74, 75, 76, 80, 65, 78, 77)
+ALL_EXCLUDED_EDITION_IDS = EDGE_CASE_EDITION_IDS + BELOW_THRESHOLD_EDITION_IDS
+LABEL_WIDTH = 17  # len("with_all_excluded")
 CTE_OPEN = "WITH tagged_editions AS ("
 BASE_TAG_CLAUSE = "lt.\"name\" = 'African-American Literature'"
 
@@ -89,13 +113,13 @@ def _find_cte_close(sql: str, body_start: int) -> int:
     )
 
 
-def _augmented_sql() -> str:
-    """The tagged_editions CTE widened to also admit the three edge-case ids.
+def _augmented_sql(edition_ids: tuple[int, ...] = EDGE_CASE_EDITION_IDS) -> str:
+    """The tagged_editions CTE widened to also admit `edition_ids`.
 
     Editions with zero rows in data_edition_literary_traditions are dropped by
     that CTE's inner JOIN before its WHERE clause ever runs, so relaxing the
-    WHERE alone (e.g. "OR e.id IN (...)") would not surface them -- the three
-    edge-case editions have no tradition-tag row at all, tagged or otherwise.
+    WHERE alone (e.g. "OR e.id IN (...)") would not surface them -- the
+    excluded editions have no tradition-tag row at all, tagged or otherwise.
     A UNION of a plain id lookup is required instead.
     """
     sql = load_query("works-per-afam-edition")
@@ -112,7 +136,7 @@ def _augmented_sql() -> str:
             "tagged_editions CTE no longer contains the expected tradition-name "
             "filter; update _augmented_sql() to match works-per-afam-edition.sql."
         )
-    ids = ", ".join(str(i) for i in EDGE_CASE_EDITION_IDS)
+    ids = ", ".join(str(i) for i in edition_ids)
     insertion = f"\n    UNION\n    SELECT id FROM data_edition WHERE id IN ({ids})\n"
     return sql[:close_idx] + insertion + sql[close_idx:]
 
@@ -133,7 +157,8 @@ def _root_filter(raw: pd.DataFrame, only_root_works: bool) -> pd.DataFrame:
 def load_variants() -> dict[str, tuple[pd.DataFrame, pd.DataFrame]]:
     return {
         "baseline": _load(load_query("works-per-afam-edition")),
-        "with_edge_cases": _load(_augmented_sql()),
+        "with_edge_cases": _load(_augmented_sql(EDGE_CASE_EDITION_IDS)),
+        "with_all_excluded": _load(_augmented_sql(ALL_EXCLUDED_EDITION_IDS)),
     }
 
 
@@ -159,7 +184,7 @@ def claim_1_never_repeated(
         w = reselection_stats(scope_frame(works, cross_series=False))
         a = reselection_stats(scope_frame(authors, cross_series=False))
         print(
-            f"  {label:<16} works: n={w['n']:>4} never-repeated={_fmt_pct(1 - w['p']):>6}   "
+            f"  {label:<{LABEL_WIDTH}} works: n={w['n']:>4} never-repeated={_fmt_pct(1 - w['p']):>6}   "
             f"authors: n={a['n']:>4} never-repeated={_fmt_pct(1 - a['p']):>6}"
         )
 
@@ -194,7 +219,7 @@ def claim_3_debut_author_vs_work(
         authors = compute_author_records(raw, editions)
         row = build_summary(works, authors).set_index("metric").loc["ever_all"]
         print(
-            f"  {label:<16} author_rate={_fmt_pct(row['author_rate']):>6}  "
+            f"  {label:<{LABEL_WIDTH}} author_rate={_fmt_pct(row['author_rate']):>6}  "
             f"work_rate={_fmt_pct(row['work_rate']):>6}  "
             f"RR={row['risk_ratio_author_over_work']:.2f}x  "
             f"OR={row['odds_ratio_author_over_work']:.2f}x  "
@@ -214,7 +239,7 @@ def claim_4_pair_retention(
         above, n = _above_share(chrono)
         share = _fmt_pct(above / n) if n else "N/A"
         print(
-            f"  {label:<16} chronological pairs={n:>4}  "
+            f"  {label:<{LABEL_WIDTH}} chronological pairs={n:>4}  "
             f"author > work in {above:>4} ({share})"
         )
 
@@ -230,9 +255,15 @@ def main() -> None:
 
     print("=" * 78)
     print(
-        "Robustness check: Black Culture (1972, id=79), Crossing the Danger Water "
-        "(1993, id=62), and African American Literature series ed.1 (1993, id=22) "
-        "added to the AFAM corpus alongside the baseline tagged set."
+        "Robustness check: excluded anthologies added to the AFAM corpus "
+        "alongside the baseline tagged set.\n"
+        "  with_edge_cases:   Black Culture (1972, id=79), Crossing the Danger "
+        "Water (1993, id=62),\n"
+        "                     African American Literature series ed.1 "
+        "(1993, id=22)\n"
+        f"  with_all_excluded: the edge cases plus the "
+        f"{len(BELOW_THRESHOLD_EDITION_IDS)} below-threshold anthologies "
+        f"(ids {', '.join(map(str, BELOW_THRESHOLD_EDITION_IDS))})"
     )
     print("=" * 78)
 
